@@ -11,4 +11,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Habilita source maps en el build de produccion para poder diagnosticar
+  // errores reportados por usuarios reales (stack traces con nombres reales
+  // de componentes/archivos en vez de identificadores minificados).
+  build: {
+    sourcemap: true,
+  },
 })
