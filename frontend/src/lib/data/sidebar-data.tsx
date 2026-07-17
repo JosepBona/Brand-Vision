@@ -30,13 +30,13 @@ export const data = {
       ),
     },
     {
-      // Sin URL todavia - se añadira mas tarde.
       name: "Github",
-      url: "#",
+      url: "https://github.com/JosepBona/Brand-Vision",
       icon: (
         <GithubIcon
         />
       ),
+      external: true,
     },
   ],
   aboutMe: [
