@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react"
-import { motion, AnimatePresence } from "motion/react"
 import { Car, Cctv, ChevronLeft, ChevronRight } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -107,19 +106,12 @@ export function StreamCarousel({
       )}
 
       {isRunning ? (
-        <AnimatePresence>
+        <>
           {streams
             .filter((streamId) => streamId === selectedStream)
             .map((streamId) => (
-              <motion.div
+              <div
                 key={streamId}
-                layoutId={`stream-${streamId}`}
-                layout
-                transition={{
-                  type: "spring",
-                  stiffness: 300,
-                  damping: 30,
-                }}
                 className="w-full overflow-hidden rounded-2xl border-[3px] border-border bg-card text-left shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)]"
               >
                 <div className="relative m-1.5 h-80 overflow-hidden rounded-lg bg-muted">
@@ -133,9 +125,9 @@ export function StreamCarousel({
                     Next capture in {secondsToNextCapture}s
                   </div>
                 </div>
-              </motion.div>
+              </div>
             ))}
-        </AnimatePresence>
+        </>
       ) : (
         <div className="relative">
           {/* Fundidos en los bordes: indican que hay mas streams fuera
@@ -159,17 +151,10 @@ export function StreamCarousel({
               const isDemo = !(streamId in streamUrls)
 
               return (
-                <motion.button
+                <button
                   key={streamId}
-                  layoutId={`stream-${streamId}`}
-                  layout
                   type="button"
                   onClick={() => selectStream(streamId)}
-                  transition={{
-                    type: "spring",
-                    stiffness: 300,
-                    damping: 30,
-                  }}
                   className={cn(
                     "group relative w-56 shrink-0 overflow-hidden rounded-2xl border-[3px] border-border bg-card text-left shadow-[0_10px_28px_-8px_rgba(0,0,0,0.6)] transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_16px_36px_-8px_rgba(0,0,0,0.7)]",
                     isDemo && "cursor-default",
@@ -215,7 +200,7 @@ export function StreamCarousel({
                       Live
                     </Badge>
                   </div>
-                </motion.button>
+                </button>
               )
             })}
           </div>
