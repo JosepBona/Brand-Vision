@@ -115,7 +115,7 @@ export function VehicleBrandDetector() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-0.5 pb-12 sm:px-1 xl:max-w-7xl 2xl:max-w-[100rem]">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-12 xl:max-w-7xl 2xl:max-w-[100rem]">
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_15.625rem]">
         {/* Columna izquierda: hero + streams + marcas + accion */}
         <div className="flex min-w-0 flex-col gap-5">
