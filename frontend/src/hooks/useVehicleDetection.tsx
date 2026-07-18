@@ -3,6 +3,41 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000";
 
+// Cuanto esperar a que /options responda antes de asumir que el backend
+// esta caido y mostrar la interfaz con datos de muestra (ver mas abajo).
+const BACKEND_CHECK_TIMEOUT_MS = 5000;
+
+// Reflejan los valores reales de detector.py (STREAMS_DISPONIBLES /
+// MARCAS_DISPONIBLES): solo se usan si el backend no responde a tiempo,
+// para que la interfaz se vea igual de poblada que con el backend
+// arriba, en vez de mostrar listas vacias.
+const FALLBACK_STREAMS = ["Nevada-1", "Nevada-2", "Nevada-3", "Nevada-4"];
+const FALLBACK_MARCAS = [
+  "tesla", "ram", "jeep", "subaru", "toyota", "chevrolet",
+  "ford", "gmc", "nissan", "lexus", "mercedes", "honda", "kia",
+];
+const FALLBACK_OPTIONS: DetectionOptions = {
+  streams: FALLBACK_STREAMS,
+  // Sin URL real (el backend esta caido, no hay stream que reproducir de
+  // verdad): solo hacen falta los nombres para que el carrusel y el
+  // selector de marcas se vean completos.
+  stream_urls: Object.fromEntries(FALLBACK_STREAMS.map((s) => [s, ""])),
+  marcas: FALLBACK_MARCAS,
+  capture_interval: 10,
+};
+const FALLBACK_BRAND_COUNTS: Record<string, number> = {
+  toyota: 11,
+  chevrolet: 9,
+  ford: 7,
+  honda: 4,
+  subaru: 4,
+  mercedes: 3,
+  ram: 3,
+  tesla: 3,
+  jeep: 3,
+  nissan: 2,
+};
+
 export interface DetectionOptions {
   streams: string[];
   stream_urls: Record<string, string>;
@@ -16,6 +51,11 @@ export type DetectionStatus =
   | "running"
   | "stopped"
   | "error";
+
+// Distinto de DetectionStatus (que es el ciclo de vida de UN job de
+// deteccion): esto es si el backend responde en absoluto. "checking"
+// dura como mucho BACKEND_CHECK_TIMEOUT_MS desde que monta la pagina.
+export type BackendStatus = "checking" | "online" | "offline";
 
 export interface DetectionEvent {
   type: "status" | "match" | "detected" | "error" | "stopped" | string;
@@ -52,6 +92,7 @@ export function useVehicleDetection() {
   });
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<DetectionStatus>("idle");
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [events, setEvents] = useState<DetectionEvent[]>([]);
   // Total acumulado por marca de TODAS las sesiones (persistido en el
@@ -91,10 +132,30 @@ export function useVehicleDetection() {
   }, []);
 
   useEffect(() => {
+    // Si /options no responde a tiempo, se asume el backend caido: se
+    // rellena la interfaz con datos de muestra (para que no se vea vacia)
+    // y se avisa aparte (ver backendStatus) de que la deteccion en vivo
+    // no esta disponible. Usa setState funcional para no pisar datos
+    // reales si llegan justo despues de que salte este timeout.
+    const timeoutId = window.setTimeout(() => {
+      setBackendStatus((prev) => (prev === "online" ? prev : "offline"));
+      setOptions((prev) => (prev.streams.length > 0 ? prev : FALLBACK_OPTIONS));
+      setPersistedBrandCounts((prev) =>
+        Object.keys(prev).length > 0 ? prev : FALLBACK_BRAND_COUNTS
+      );
+    }, BACKEND_CHECK_TIMEOUT_MS);
+
     fetch(`${API_BASE}/options`)
       .then((res) => res.json())
-      .then((data: DetectionOptions) => setOptions(data))
-      .catch(() => setStatus("error"));
+      .then((data: DetectionOptions) => {
+        window.clearTimeout(timeoutId);
+        setBackendStatus("online");
+        setOptions(data);
+      })
+      .catch(() => {
+        // El timeout de arriba se encarga de mostrar el fallback; un
+        // fallo puntual aqui no debe tumbar el status del job en curso.
+      });
 
     fetch(`${API_BASE}/stats/brands`)
       .then((res) => res.json())
@@ -103,18 +164,31 @@ export function useVehicleDetection() {
       )
       .catch(() => {});
 
-    return () => wsRef.current?.close();
+    return () => {
+      window.clearTimeout(timeoutId);
+      wsRef.current?.close();
+    };
   }, []);
 
   const start = useCallback(
     async (stream: string, marcas: string[]) => {
       setStatus("starting");
       setErrorMessage(null);
-      const res = await fetch(`${API_BASE}/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stream, marcas }),
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${API_BASE}/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stream, marcas }),
+        });
+      } catch {
+        // Backend inalcanzable (caido, red cortada, etc.): sin este catch
+        // el fetch rechazado dejaba el boton pegado en "Starting..." para
+        // siempre, ya que quien llama a start() no espera su promesa.
+        setErrorMessage("Backend is unreachable right now.");
+        setStatus("error");
+        return;
+      }
 
       if (!res.ok) {
         // El backend manda el detalle en {"detail": "..."} (convencion de
@@ -184,6 +258,7 @@ export function useVehicleDetection() {
     start,
     stop,
     status,
+    backendStatus,
     errorMessage,
     events,
     matches,

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { WifiOff } from "lucide-react"
 
 import { useVehicleDetection } from "@/hooks/useVehicleDetection"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { brandColor } from "@/components/brand_vision_page/brand-color"
 import HeroBrandVision from "@/components/brand_vision_page/hero_brand_vision"
 import StreamCarousel from "@/components/brand_vision_page/stream-carousel"
@@ -17,6 +19,7 @@ export function VehicleBrandDetector() {
     start,
     stop,
     status,
+    backendStatus,
     errorMessage,
     events,
     matches,
@@ -124,6 +127,17 @@ export function VehicleBrandDetector() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-[1.5rem] pb-12 xl:max-w-7xl 2xl:max-w-[100rem]">
+      {backendStatus === "offline" && (
+        <Alert className="border-sky-500/40 bg-sky-500/15 text-sky-100">
+          <WifiOff className="h-4 w-4" />
+          <AlertTitle>Backend connection is down</AlertTitle>
+          <AlertDescription className="text-sky-100/80">
+            You can still browse and interact with the interface, but
+            vehicle detection isn't available right now.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_15.625rem]">
         {/* Columna izquierda: hero + streams + marcas + accion */}
         <div className="flex min-w-0 flex-col gap-5">
