@@ -1,176 +1,103 @@
 """
 Backend that connects the React dashboard to detector.py.
 
-Each "job" = one (stream, brands) combination running in its own
-subprocess (multiprocessing.Process). Events (status, match, detected,
-error) are pushed to a multiprocessing.Queue and an asyncio task forwards
-them over WebSocket to every client subscribed to that job.
+Everything runs in this single process now - no more multiprocessing:
+  - The frontend already has the HLS <video> playing for the user, so it
+    captures a frame from it (canvas) every DEFAULT_INTERVAL and sends it
+    here over the job's WebSocket - the frame the user is literally
+    looking at, no extra network connection to the camera origin needed.
+  - Those frames go into a single SHARED `frame_queue`, consumed by one
+    background thread (detector.inference_worker) with the YOLO models
+    loaded ONCE at startup. Before this, each job loaded its own copy of
+    both models (one multiprocessing.Process per job), which capped how
+    many people could use detection at once by whatever fit in VRAM.
+  - Each job still gets its own `queue.Queue` for events (status, match,
+    detected, error) forwarded over its WebSocket, and its own dedup/count
+    state in detector.py (keyed by job_id, so two people watching the
+    same stream don't share state).
 
-The backend does NOT connect to the camera stream itself. The frontend
-already has the HLS <video> playing for the user, so it captures a frame
-from it (canvas) every DEFAULT_INTERVAL and sends it here over the same
-WebSocket - the frame the user is literally looking at, no extra network
-connection to the camera origin needed. `frame_queue` (one per job) is
-how that frame data crosses from this asyncio process into the detection
-subprocess.
-
-The `jobs` dict only lives in the memory of the currently running uvicorn
-process. The detector runs in a fully separate multiprocessing.Process, so
-if uvicorn restarts for any reason (--reload picking up a .py change, a
-crash, etc.) the new process starts with an empty `jobs` dict and has no
-way of knowing a detection process is still alive. Without persistence,
-a POST to /stop would 404 and the detection process would be orphaned,
-left running and writing to the console forever.
-
-To avoid that:
-  1. Each job is persisted to a JSON file (JOBS_REGISTRY_FILE) with its
-     real PID, in addition to living in the in-memory `jobs` dict.
-  2. On startup, that file is read: any PID that's still alive but not in
-     the in-memory `jobs` dict is treated as orphaned and can be killed by
-     PID alone, without needing the original `multiprocessing.Process`
-     object.
-  3. /stop first tries the normal path (Process.terminate()); if the job
-     isn't in memory, it falls back to looking it up in the registry and
-     killing it by PID (via psutil, which works the same on
-     Windows/Linux/Mac).
-  4. A FastAPI lifespan handler kills all active processes on a clean
-     server shutdown (Ctrl+C, `kill -TERM`, etc.).
-  5. Stopping a job pushes a "stopped" event onto the Queue to unblock the
-     thread doing `queue.get()` (otherwise that thread would wait forever
-     doing nothing useful).
+Because there's no separate OS process per job anymore, a job can't be
+"orphaned" the way it could before (a --reload restart just clears the
+in-memory `jobs` dict and the shared inference thread restarts cleanly -
+there's nothing left running that this process doesn't own).
 
 Run with:
     uvicorn api:app --reload --host 0.0.0.0 --port 8000
-
-NOTE: it's still best to avoid touching backend code (or to run uvicorn
-without --reload) while a detection is running in tests. The on-disk
-registry prevents the process from being orphaned forever, but a restart
-mid-detection still interrupts it.
 """
 
 import asyncio
 import json
 import logging
-import multiprocessing as mp
 import os
+import queue as pyqueue
+import threading
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
-import psutil
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import stats_db
+import detector
 from detector import (
+    DEFAULT_CLS_MARCA,
+    DEFAULT_DET_MODEL,
     DEFAULT_INTERVAL,
     MARCAS_DISPONIBLES,
     STREAMS_DISPONIBLES,
-    worker,
+    inference_worker,
+    load_model,
+    setup_logging,
 )
 
 log = logging.getLogger("api")
 logging.basicConfig(level=logging.INFO)
 
-JOBS_REGISTRY_FILE = Path("resultados") / "jobs_registry.json"
-
-
-# -- Persistent job registry (to survive uvicorn restarts) --------------------
-
-def _load_registry() -> Dict[str, dict]:
-    if not JOBS_REGISTRY_FILE.exists():
-        return {}
-    try:
-        return json.loads(JOBS_REGISTRY_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        log.exception("Could not read %s, ignoring.", JOBS_REGISTRY_FILE)
-        return {}
-
-
-def _save_registry(registry: Dict[str, dict]) -> None:
-    try:
-        JOBS_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        JOBS_REGISTRY_FILE.write_text(json.dumps(registry, indent=2), encoding="utf-8")
-    except Exception:
-        log.exception("Could not write %s", JOBS_REGISTRY_FILE)
-
-
-def _registry_put(job_id: str, pid: int, stream: str, marcas: list[str]) -> None:
-    registry = _load_registry()
-    registry[job_id] = {"pid": pid, "stream": stream, "marcas": marcas}
-    _save_registry(registry)
-
-
-def _registry_remove(job_id: str) -> Optional[dict]:
-    registry = _load_registry()
-    entry = registry.pop(job_id, None)
-    _save_registry(registry)
-    return entry
-
-
-def _kill_pid(pid: int) -> bool:
-    """Kill a process by PID (even without the original Process object).
-    Returns True if it was alive and got sent the termination signal."""
-    try:
-        proc = psutil.Process(pid)
-    except psutil.NoSuchProcess:
-        return False
-
-    if not proc.is_running():
-        return False
-
-    try:
-        proc.terminate()  # SIGTERM on POSIX, TerminateProcess on Windows
-        proc.wait(timeout=5)
-    except psutil.TimeoutExpired:
-        log.warning("PID %d did not die after terminate(), forcing kill().", pid)
-        proc.kill()
-    except psutil.NoSuchProcess:
-        pass
-    return True
-
-
-def _cleanup_orphans_on_startup() -> None:
-    """On startup, check the registry: any PID still alive from a
-    previous run (e.g. it survived a --reload) gets killed here, since
-    there's no way to associate it with a websocket/client anymore."""
-    registry = _load_registry()
-    if not registry:
-        return
-
-    still_running = {}
-    for job_id, entry in registry.items():
-        pid = entry.get("pid")
-        if pid is None:
-            continue
-        if _kill_pid(pid):
-            log.warning(
-                "Orphaned job detected on startup (job_id=%s, pid=%s, stream=%s). "
-                "Likely survived a previous uvicorn restart. Killed.",
-                job_id, pid, entry.get("stream"),
-            )
-        # removed from the registry either way (alive or already dead)
-    _save_registry(still_running)  # leaves the registry empty
+# Cola compartida por TODOS los jobs activos: cada WebSocket empuja aqui
+# los frames que le manda su frontend, el (unico) hilo de inferencia los
+# consume con los modelos ya cargados.
+frame_queue: "pyqueue.Queue" = pyqueue.Queue()
+inference_stop_event = threading.Event()
+inference_thread: threading.Thread | None = None
 
 
 # -- FastAPI app ---------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: clean up any orphaned process from a previous run.
-    _cleanup_orphans_on_startup()
+    output_dir = Path("resultados")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    setup_logging(output_dir / "search.log")
     stats_db.init_db()
+
+    # Los modelos se cargan UNA sola vez aqui, no por job. Un solo hilo de
+    # inferencia los usa durante toda la vida del servidor.
+    log.info("Cargando modelos YOLO (una sola vez, compartidos por todos los jobs)...")
+    det_model       = load_model(DEFAULT_DET_MODEL)
+    cls_marca_model = load_model(DEFAULT_CLS_MARCA)
+
+    global inference_thread
+    inference_thread = threading.Thread(
+        target=inference_worker,
+        args=(frame_queue, det_model, cls_marca_model, inference_stop_event),
+        name="inference-worker",
+        daemon=True,
+    )
+    inference_thread.start()
+
     yield
-    # Clean shutdown (Ctrl+C, kill -TERM, etc.): kill everything still alive.
+
+    # Clean shutdown (Ctrl+C, kill -TERM, etc.)
     for job_id, job in list(jobs.items()):
-        if job["process"].is_alive():
-            log.info("Shutting down server: terminating job %s", job_id)
-            job["process"].terminate()
-            job["process"].join(timeout=5)
         job["poller_task"].cancel()
-        _registry_remove(job_id)
+        detector.remove_job(job_id)
+
+    inference_stop_event.set()
+    if inference_thread is not None:
+        inference_thread.join(timeout=5)
 
 
 app = FastAPI(title="Vehicle Detection API", lifespan=lifespan)
@@ -191,15 +118,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Used for search.log, jobs_registry.json and stats.db - no images are
-# saved to disk anymore (frames/crops travel base64-encoded inside the
-# WebSocket events themselves, see detector.py), so there's nothing left
-# to mount/serve as static files here.
-Path("resultados").mkdir(parents=True, exist_ok=True)
-
 jobs: Dict[str, dict] = {}
-# job_id -> {"process", "queue", "frame_queue", "sockets", "poller_task",
-#            "stream", "marcas"}
+# job_id -> {"queue", "sockets", "poller_task", "stream", "marcas"}
 
 
 class StartPayload(BaseModel):
@@ -233,48 +153,21 @@ async def get_brand_stats():
 
 @app.get("/jobs")
 async def list_jobs():
-    result = {
+    return {
         job_id: {
             "stream": job["stream"],
             "marcas": job["marcas"],
-            "alive": job["process"].is_alive(),
             "clientes_conectados": len(job["sockets"]),
-            "pid": job["process"].pid,
         }
         for job_id, job in jobs.items()
     }
 
-    # Also report orphans that remain in the registry but are no longer in
-    # memory (in case the startup cleanup missed them, e.g. because they
-    # started after the last restart).
-    registry = _load_registry()
-    for job_id, entry in registry.items():
-        if job_id in result:
-            continue
-        pid = entry.get("pid")
-        alive = False
-        if pid is not None:
-            try:
-                alive = psutil.Process(pid).is_running()
-            except psutil.NoSuchProcess:
-                alive = False
-        result[job_id] = {
-            "stream": entry.get("stream"),
-            "marcas": entry.get("marcas"),
-            "alive": alive,
-            "clientes_conectados": 0,
-            "pid": pid,
-            "huerfano": True,
-        }
 
-    return result
-
-
-async def poll_queue(job_id: str, queue: "mp.Queue") -> None:
+async def poll_queue(job_id: str, event_queue: "pyqueue.Queue") -> None:
     """Reads the Queue (blocking) in a separate thread and forwards events over WS."""
     loop = asyncio.get_event_loop()
     while True:
-        event = await loop.run_in_executor(None, queue.get)
+        event = await loop.run_in_executor(None, event_queue.get)
         job = jobs.get(job_id)
         if job is None:
             return
@@ -302,35 +195,20 @@ async def start_detection(payload: StartPayload):
         raise HTTPException(400, f"Unknown brand(s): {marcas_invalidas}")
 
     job_id = str(uuid.uuid4())
-    queue: "mp.Queue" = mp.Queue()
-    # Los frames capturados por el frontend (canvas sobre el <video>)
-    # llegan aqui via WebSocket (ver ws_endpoint) y el detector los
-    # consume del otro lado, en su propio proceso.
-    frame_queue: "mp.Queue" = mp.Queue()
+    event_queue: "pyqueue.Queue" = pyqueue.Queue()
+    detector.register_job(job_id)
 
-    process = mp.Process(
-        target=worker,
-        args=(payload.marcas, frame_queue, queue, payload.stream),
-        name=f"job-{job_id}",
-        daemon=True,
-    )
-    process.start()
-
-    poller_task = asyncio.create_task(poll_queue(job_id, queue))
+    poller_task = asyncio.create_task(poll_queue(job_id, event_queue))
 
     jobs[job_id] = {
-        "process": process,
-        "queue": queue,
-        "frame_queue": frame_queue,
+        "queue": event_queue,
         "sockets": [],
         "poller_task": poller_task,
         "stream": payload.stream,
         "marcas": payload.marcas,
     }
 
-    # Persist the PID to disk: if uvicorn restarts while this job is still
-    # alive, /stop can still find it and kill it by PID.
-    _registry_put(job_id, process.pid, payload.stream, payload.marcas)
+    detector.emit(event_queue, "started", stream=payload.stream, marcas=payload.marcas)
 
     return {"job_id": job_id, "status": "started", "stream": payload.stream, "marcas": payload.marcas}
 
@@ -341,59 +219,33 @@ async def stop_detection(payload: StopPayload | None = None, job_id: str | None 
     # job_id (query param) comes from navigator.sendBeacon in beforeunload
     # (F5/closing the tab): a beacon with no body avoids the CORS preflight
     # a cross-origin JSON body would require, which during an unload might
-    # not complete in time, leaving the backend process orphaned.
+    # not complete in time.
     resolved_job_id = payload.job_id if payload is not None else job_id
     if not resolved_job_id:
         raise HTTPException(400, "job_id required")
 
     job = jobs.pop(resolved_job_id, None)
+    if job is None:
+        raise HTTPException(404, "job not found")
 
-    if job is not None:
-        # Normal path: the job is in this process's memory.
-        if job["process"].is_alive():
-            job["process"].terminate()
-            job["process"].join(timeout=5)
-            if job["process"].is_alive():
-                # Shouldn't happen, but force SIGKILL just in case.
-                job["process"].kill()
-                job["process"].join(timeout=5)
+    detector.remove_job(resolved_job_id)
 
-        # Unblock the thread waiting on queue.get() and notify connected
-        # clients that the job has finished.
+    # Unblock the thread waiting on queue.get() and notify connected
+    # clients that the job has finished.
+    try:
+        job["queue"].put({"type": "stopped", "reason": "stop_requested"})
+    except Exception:
+        pass
+
+    job["poller_task"].cancel()
+
+    for ws in job["sockets"]:
         try:
-            job["queue"].put({"type": "stopped", "reason": "stop_requested"})
+            await ws.close()
         except Exception:
             pass
 
-        job["poller_task"].cancel()
-
-        for ws in job["sockets"]:
-            try:
-                await ws.close()
-            except Exception:
-                pass
-
-        _registry_remove(resolved_job_id)
-        return {"status": "stopped", "job_id": resolved_job_id}
-
-    # Recovery path: the job isn't in memory (uvicorn probably restarted
-    # via --reload while it was running). Look it up in the persistent
-    # registry and kill it directly by PID.
-    entry = _registry_remove(resolved_job_id)
-    if entry is None or entry.get("pid") is None:
-        raise HTTPException(404, "job not found")
-
-    killed = _kill_pid(entry["pid"])
-    if not killed:
-        # It was already dead (e.g. someone killed it manually); still a
-        # success from the user's point of view: it's not running anymore.
-        return {"status": "stopped", "job_id": resolved_job_id, "note": "process was already dead"}
-
-    return {
-        "status": "stopped",
-        "job_id": resolved_job_id,
-        "note": "job recovered from the registry after a server restart",
-    }
+    return {"status": "stopped", "job_id": resolved_job_id}
 
 
 @app.websocket("/ws/{job_id}")
@@ -411,6 +263,9 @@ async def ws_endpoint(websocket: WebSocket, job_id: str):
             # El frontend manda aqui cada frame que captura del <video>
             # ({"type": "frame", "image_data": "<jpeg en base64>"}), en vez
             # de que el backend se conecte el mismo al stream en directo.
+            # Se deposita en la cola COMPARTIDA de inferencia, etiquetado
+            # con este job_id para que su estado no se mezcle con el de
+            # otros jobs (incluso si ven el mismo stream).
             message = await websocket.receive_text()
             try:
                 data = json.loads(message)
@@ -419,15 +274,18 @@ async def ws_endpoint(websocket: WebSocket, job_id: str):
             if isinstance(data, dict) and data.get("type") == "frame":
                 image_data = data.get("image_data")
                 if image_data:
-                    job["frame_queue"].put(image_data)
+                    frame_queue.put({
+                        "job_id": job_id,
+                        "label": job["stream"],
+                        "marcas": job["marcas"],
+                        "image_b64": image_data,
+                        "queue": job["queue"],
+                    })
     except WebSocketDisconnect:
         if websocket in job["sockets"]:
             job["sockets"].remove(websocket)
 
 
 if __name__ == "__main__":
-    # Important on Windows/macOS (spawn): this guard prevents the whole
-    # module from being re-executed inside each subprocess when uvicorn
-    # starts.
     import uvicorn
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)

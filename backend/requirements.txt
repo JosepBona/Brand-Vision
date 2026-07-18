@@ -5,4 +5,3 @@ numpy
 scikit-image
 ultralytics
 pydantic
-psutil

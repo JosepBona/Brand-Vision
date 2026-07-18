@@ -1,5 +1,6 @@
 import base64
 import logging
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -12,11 +13,6 @@ from skimage.metrics import structural_similarity as ssim
 import stats_db
 
 DEFAULT_INTERVAL    = 5
-# Tope de tiempo real sin recibir NINGUN frame del frontend antes de dar
-# el job por muerto (p.ej. el usuario cerro la pestaña sin que llegara a
-# disparar el beforeunload/sendBeacon). El propio proceso se mata igual
-# con /stop, esto es solo una red de seguridad.
-NO_FRAME_TIMEOUT_SECONDS = 180
 DEFAULT_CONF        = 0.25
 DEFAULT_DET_MODEL   = "yolo26n.pt"
 DEFAULT_CLS_MARCA   = "best.pt"
@@ -300,142 +296,155 @@ def save_discarded(crop: np.ndarray, reason: str, queue=None) -> None:
 #
 # El frontend es quien decide cuando captura un frame (cada
 # DEFAULT_INTERVAL, del <video> que el usuario ya esta viendo) y lo manda
-# por WebSocket; api.py lo deposita en `frame_queue`. Este bucle no hace
-# ninguna captura de red propia: solo espera el siguiente frame, lo
-# decodifica y corre deteccion/clasificacion sobre el.
+# por WebSocket; api.py lo deposita en una `frame_queue` COMPARTIDA por
+# todos los jobs activos. Un unico hilo (inference_worker) consume esa
+# cola con los modelos YOLO cargados UNA sola vez, en vez de que cada job
+# cargue su propia copia (antes cada job era su propio proceso con sus
+# propios modelos - con una GPU de VRAM limitada, eso topaba cuantos
+# usuarios podian usar la deteccion a la vez).
+#
+# El estado de deduplicacion (known_crops/contadores) vive por job_id, no
+# por nombre de stream: asi dos usuarios viendo el mismo stream no
+# comparten memoria de recortes ni contadores entre si.
 
-def run(marcas: list[str], det_model, cls_marca_model, frame_queue,
-        queue=None, label: str = "") -> None:
+_state_lock = threading.Lock()
+_job_states: dict[str, dict] = {}
 
-    # Memory of recent crops (not just the last frame): each entry is
-    # {"prepared": grayscale+resized crop, "last_seen": timestamp}. A
-    # parked vehicle that YOLO fails to detect in a single frame
-    # (occlusion, confidence just under the threshold, etc.) shouldn't be
-    # counted as "new" again as soon as it reappears shortly after.
-    known_crops    = []
-    total_frames   = 0
-    total_matches  = 0
-    start_time     = time.time()
 
-    log.info("Buscando: %s", ", ".join(marcas))
-    log.info("[%s] Esperando frames capturados por el frontend...", label)
+def _fresh_state() -> dict:
+    return {"known_crops": [], "total_frames": 0, "total_matches": 0}
 
-    emit(queue, "started", stream=label, marcas=marcas)
 
-    try:
-        while True:
-            try:
-                image_b64 = frame_queue.get(timeout=NO_FRAME_TIMEOUT_SECONDS)
-            except Empty:
-                log.error("[%s] Sin frames del frontend durante %ds. Deteniendo.",
-                          label, NO_FRAME_TIMEOUT_SECONDS)
-                emit(queue, "stopped", stream=label, reason="no_frame_timeout")
+def register_job(job_id: str) -> None:
+    """Llamado al arrancar un job: crea su estado desde cero, para que no
+    arrastre memoria de recortes de un job anterior con el mismo id (no
+    deberia pasar con UUIDs, pero deja el estado limpio explicitamente)."""
+    with _state_lock:
+        _job_states[job_id] = _fresh_state()
+
+
+def remove_job(job_id: str) -> None:
+    """Llamado al detener un job: libera su estado. Sin esto, cada sesion
+    de deteccion dejaria una entrada huerfana en memoria para siempre."""
+    with _state_lock:
+        _job_states.pop(job_id, None)
+
+
+def _get_job_state(job_id: str) -> dict:
+    with _state_lock:
+        return _job_states.setdefault(job_id, _fresh_state())
+
+
+def process_frame(job_id: str, label: str, marcas: list[str], image_b64: str,
+                   det_model, cls_marca_model, queue=None) -> None:
+    """Decodifica un frame ya capturado por el frontend y corre deteccion +
+    clasificacion sobre el, actualizando el estado de ESTE job (no del
+    stream: dos jobs en el mismo stream no se pisan entre si)."""
+    frame = decode_frame(image_b64)
+    if frame is None:
+        log.warning("[%s] Frame recibido invalido, descartado.", label)
+        return
+
+    state = _get_job_state(job_id)
+    state["total_frames"] += 1
+    total_frames = state["total_frames"]
+    known_crops  = state["known_crops"]
+
+    latest_frame_data = save_latest_frame(frame)
+    boxes = detect_vehicles(frame, det_model, DEFAULT_CONF)
+
+    if not boxes:
+        status.info("[%s] Frame %d | sin vehiculos detectados | matches: %d",
+                    label, total_frames, state["total_matches"])
+        emit(queue, "status", stream=label, frame=total_frames,
+             detalle="sin_vehiculos", matches=state["total_matches"],
+             frame_data=latest_frame_data)
+    else:
+        status.info("[%s] Frame %d | %d vehiculo(s) en frame, clasificando... | matches: %d",
+                    label, total_frames, len(boxes), state["total_matches"])
+        emit(queue, "status", stream=label, frame=total_frames,
+             detalle="clasificando", vehiculos=len(boxes), matches=state["total_matches"],
+             frame_data=latest_frame_data)
+
+    for box in boxes:
+        crop = get_crop(frame, box)
+        if crop is None:
+            status.info("[%s] Frame %d | vehiculo descartado (recorte invalido)",
+                        label, total_frames)
+            continue
+
+        if not is_sharp(crop, DEFAULT_MIN_SHARPNESS):
+            status.info("[%s] Frame %d | vehiculo descartado (borroso, varianza < %.1f)",
+                        label, total_frames, DEFAULT_MIN_SHARPNESS)
+            save_discarded(crop, "blurry", queue=queue)
+            continue
+
+        # Deduplication on the vehicle crop (not the full frame):
+        # compared against the memory of recent crops (not just
+        # the immediately previous frame), so a parked vehicle
+        # that YOLO misses for 1-2 frames is still recognized as
+        # the same one when it reappears.
+        crop_prepared = prepare_crop(crop)
+        box_xyxy = tuple(map(int, box.xyxy[0].tolist()))
+
+        match_idx, reason, score = None, "", -1.0
+        for i, known in enumerate(known_crops):
+            iou = box_iou(box_xyxy, known["box"])
+            if iou >= CROP_IOU_THRESHOLD:
+                match_idx, reason, score = i, "iou", iou
+                break
+            dup, ssim_score = is_duplicate(crop_prepared, known["prepared"], CROP_DEDUP_THRESHOLD)
+            if dup:
+                match_idx, reason, score = i, "ssim", ssim_score
                 break
 
-            frame = decode_frame(image_b64)
-            if frame is None:
-                log.warning("[%s] Frame recibido invalido, descartado.", label)
-                continue
+        if match_idx is not None:
+            known_crops[match_idx]["prepared"] = crop_prepared
+            known_crops[match_idx]["box"] = box_xyxy
+            known_crops[match_idx]["last_seen"] = time.time()
+            status.info("[%s] Frame %d | vehiculo descartado (recorte duplicado, %s %.3f)",
+                        label, total_frames, reason, score)
+            save_discarded(crop, "duplicate", queue=queue)
+            continue
 
-            total_frames += 1
+        known_crops.append({"prepared": crop_prepared, "box": box_xyxy, "last_seen": time.time()})
 
-            latest_frame_data = save_latest_frame(frame)
-            boxes = detect_vehicles(frame, det_model, DEFAULT_CONF)
+        pred_marca, conf_marca = classify_crop(crop, cls_marca_model)
 
-            if not boxes:
-                status.info("[%s] Frame %d | sin vehiculos detectados | matches: %d",
-                            label, total_frames, total_matches)
-                emit(queue, "status", stream=label, frame=total_frames,
-                     detalle="sin_vehiculos", matches=total_matches,
-                     frame_data=latest_frame_data)
-            else:
-                status.info("[%s] Frame %d | %d vehiculo(s) en frame, clasificando... | matches: %d",
-                            label, total_frames, len(boxes), total_matches)
-                emit(queue, "status", stream=label, frame=total_frames,
-                     detalle="clasificando", vehiculos=len(boxes), matches=total_matches,
-                     frame_data=latest_frame_data)
+        matched, marca = matches_any_marca(pred_marca, conf_marca, marcas)
+        if matched:
+            state["total_matches"] += 1
+            save_match(frame, crop, marca, conf_marca, label, queue=queue)
+        else:
+            save_detected(crop, pred_marca, conf_marca, queue=queue)
+            log.info("Detectado: %s (%.2f)", pred_marca, conf_marca)
 
-            for box in boxes:
-                crop = get_crop(frame, box)
-                if crop is None:
-                    status.info("[%s] Frame %d | vehiculo descartado (recorte invalido)",
-                                label, total_frames)
-                    continue
-
-                if not is_sharp(crop, DEFAULT_MIN_SHARPNESS):
-                    status.info("[%s] Frame %d | vehiculo descartado (borroso, varianza < %.1f)",
-                                label, total_frames, DEFAULT_MIN_SHARPNESS)
-                    save_discarded(crop, "blurry", queue=queue)
-                    continue
-
-                # Deduplication on the vehicle crop (not the full frame):
-                # compared against the memory of recent crops (not just
-                # the immediately previous frame), so a parked vehicle
-                # that YOLO misses for 1-2 frames is still recognized as
-                # the same one when it reappears.
-                crop_prepared = prepare_crop(crop)
-                box_xyxy = tuple(map(int, box.xyxy[0].tolist()))
-
-                match_idx, reason, score = None, "", -1.0
-                for i, known in enumerate(known_crops):
-                    iou = box_iou(box_xyxy, known["box"])
-                    if iou >= CROP_IOU_THRESHOLD:
-                        match_idx, reason, score = i, "iou", iou
-                        break
-                    dup, ssim_score = is_duplicate(crop_prepared, known["prepared"], CROP_DEDUP_THRESHOLD)
-                    if dup:
-                        match_idx, reason, score = i, "ssim", ssim_score
-                        break
-
-                if match_idx is not None:
-                    known_crops[match_idx]["prepared"] = crop_prepared
-                    known_crops[match_idx]["box"] = box_xyxy
-                    known_crops[match_idx]["last_seen"] = time.time()
-                    status.info("[%s] Frame %d | vehiculo descartado (recorte duplicado, %s %.3f)",
-                                label, total_frames, reason, score)
-                    save_discarded(crop, "duplicate", queue=queue)
-                    continue
-
-                known_crops.append({"prepared": crop_prepared, "box": box_xyxy, "last_seen": time.time()})
-
-                pred_marca, conf_marca = classify_crop(crop, cls_marca_model)
-
-                matched, marca = matches_any_marca(pred_marca, conf_marca, marcas)
-                if matched:
-                    total_matches += 1
-                    save_match(frame, crop, marca, conf_marca, label, queue=queue)
-                else:
-                    save_detected(crop, pred_marca, conf_marca, queue=queue)
-                    log.info("Detectado: %s (%.2f)", pred_marca, conf_marca)
-
-            # Forget crops that have gone too long without reappearing, so
-            # we don't compare against an ever-growing history.
-            now = time.time()
-            known_crops = [
-                k for k in known_crops
-                if now - k["last_seen"] <= CROP_MEMORY_SECONDS
-            ]
-
-    except KeyboardInterrupt:
-        elapsed = int(time.time() - start_time)
-        log.info("Busqueda detenida. Elapsed: %ds | Frames: %d | Matches: %d",
-                 elapsed, total_frames, total_matches)
-        emit(queue, "stopped", stream=label, reason="keyboard_interrupt",
-             frames=total_frames, matches=total_matches)
+    # Forget crops that have gone too long without reappearing, so
+    # we don't compare against an ever-growing history.
+    now = time.time()
+    state["known_crops"] = [
+        k for k in known_crops
+        if now - k["last_seen"] <= CROP_MEMORY_SECONDS
+    ]
 
 
-# -- Worker (subprocess) --------------------------------------------------------
+def inference_worker(frame_queue, det_model, cls_marca_model,
+                      stop_event: threading.Event) -> None:
+    """Unico consumidor de `frame_queue`, compartido por todos los jobs
+    activos. Vive durante toda la vida del servidor (se arranca una vez
+    en el lifespan de FastAPI), con los modelos cargados una sola vez."""
+    while not stop_event.is_set():
+        try:
+            item = frame_queue.get(timeout=1)
+        except Empty:
+            continue
 
-def worker(marcas: list[str], frame_queue, queue=None, label: str = "") -> None:
-    output_dir = Path("resultados")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    setup_logging(output_dir / "search.log")
-
-    try:
-        det_model       = load_model(DEFAULT_DET_MODEL)
-        cls_marca_model = load_model(DEFAULT_CLS_MARCA)
-    except Exception as exc:
-        emit(queue, "error", message=f"Error cargando modelos: {exc}")
-        raise
-
-    run(marcas, det_model, cls_marca_model, frame_queue, queue=queue, label=label)
+        process_frame(
+            job_id=item["job_id"],
+            label=item["label"],
+            marcas=item["marcas"],
+            image_b64=item["image_b64"],
+            det_model=det_model,
+            cls_marca_model=cls_marca_model,
+            queue=item["queue"],
+        )
