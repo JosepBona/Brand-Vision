@@ -6,6 +6,14 @@ subprocess (multiprocessing.Process). Events (status, match, detected,
 error) are pushed to a multiprocessing.Queue and an asyncio task forwards
 them over WebSocket to every client subscribed to that job.
 
+The backend does NOT connect to the camera stream itself. The frontend
+already has the HLS <video> playing for the user, so it captures a frame
+from it (canvas) every DEFAULT_INTERVAL and sends it here over the same
+WebSocket - the frame the user is literally looking at, no extra network
+connection to the camera origin needed. `frame_queue` (one per job) is
+how that frame data crosses from this asyncio process into the detection
+subprocess.
+
 The `jobs` dict only lives in the memory of the currently running uvicorn
 process. The detector runs in a fully separate multiprocessing.Process, so
 if uvicorn restarts for any reason (--reload picking up a .py change, a
@@ -45,7 +53,6 @@ import json
 import logging
 import multiprocessing as mp
 import os
-import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -68,28 +75,6 @@ log = logging.getLogger("api")
 logging.basicConfig(level=logging.INFO)
 
 JOBS_REGISTRY_FILE = Path("resultados") / "jobs_registry.json"
-
-# -- Arranque escalonado entre streams -----------------------------------------
-# Si 2-3 streams abren su conexion TCP/TLS practicamente al mismo instante
-# (p.ej. varios usuarios arrancando casi a la vez), el origen o la propia
-# red local pueden rechazar alguna de esas conexiones nuevas (visto en
-# pruebas: "Connection to tcp://... failed"). En vez de dejar que cada job
-# abra su conexion apenas arranca su proceso, cada /start reserva un hueco
-# de tiempo secuencial: si ya hay un stream a punto de conectar, este
-# espera lo que haga falta para no coincidir con el.
-STREAM_START_STAGGER_SECONDS = 5.0
-_next_available_start_slot = 0.0
-
-
-def _reserve_start_slot() -> float:
-    """Devuelve cuantos segundos debe esperar este job antes de abrir su
-    conexion al stream. Reserva el siguiente hueco libre de forma
-    secuencial, para que dos /start casi simultaneos no colisionen."""
-    global _next_available_start_slot
-    now = time.monotonic()
-    slot = max(now, _next_available_start_slot)
-    _next_available_start_slot = slot + STREAM_START_STAGGER_SECONDS
-    return max(0.0, slot - now)
 
 
 # -- Persistent job registry (to survive uvicorn restarts) --------------------
@@ -213,7 +198,8 @@ app.add_middleware(
 Path("resultados").mkdir(parents=True, exist_ok=True)
 
 jobs: Dict[str, dict] = {}
-# job_id -> {"process", "queue", "sockets", "poller_task", "stream", "marcas"}
+# job_id -> {"process", "queue", "frame_queue", "sockets", "poller_task",
+#            "stream", "marcas"}
 
 
 class StartPayload(BaseModel):
@@ -306,38 +292,6 @@ async def poll_queue(job_id: str, queue: "mp.Queue") -> None:
             return
 
 
-# Tope de streams corriendo a la vez: probado empiricamente (ver historial
-# de este archivo) que 2 streams simultaneos son estables, pero un tercero
-# empieza a generar fallos de conexion/contencion de red. En vez de
-# bloquear solo streams duplicados, se bloquea cualquier /start nuevo
-# mientras ya haya MAX_CONCURRENT_STREAMS jobs activos.
-MAX_CONCURRENT_STREAMS = 2
-
-
-def _count_active_jobs() -> int:
-    """Cuenta los jobs realmente vivos ahora mismo: los que estan en
-    memoria mas los que sobrevivieron a un restart de uvicorn y solo
-    constan en el registro persistente (ver _load_registry)."""
-    active_ids = {
-        job_id for job_id, job in jobs.items() if job["process"].is_alive()
-    }
-
-    registry = _load_registry()
-    for job_id, entry in registry.items():
-        if job_id in active_ids:
-            continue
-        pid = entry.get("pid")
-        if pid is None:
-            continue
-        try:
-            if psutil.Process(pid).is_running():
-                active_ids.add(job_id)
-        except psutil.NoSuchProcess:
-            pass
-
-    return len(active_ids)
-
-
 @app.post("/start")
 async def start_detection(payload: StartPayload):
     if payload.stream not in STREAMS_DISPONIBLES:
@@ -347,30 +301,16 @@ async def start_detection(payload: StartPayload):
     if marcas_invalidas:
         raise HTTPException(400, f"Unknown brand(s): {marcas_invalidas}")
 
-    if _count_active_jobs() >= MAX_CONCURRENT_STREAMS:
-        raise HTTPException(
-            409,
-            f"Stream '{payload.stream}' is already in use by another user. "
-            "Try a different stream or wait a while.",
-        )
-
-    url = STREAMS_DISPONIBLES[payload.stream]
     job_id = str(uuid.uuid4())
     queue: "mp.Queue" = mp.Queue()
-    # Canal cross-proceso: el detector (en su propio Process) espera un
-    # mensaje aqui antes de disparar la primera captura, sincronizandola
-    # con el momento en que el <video> HLS del frontend realmente empieza
-    # a reproducir. El valor puesto en la queue son los ms que tardo el
-    # navegador en llegar a ese primer frame (ver ws_endpoint mas abajo).
-    video_ready_queue: "mp.Queue" = mp.Queue()
-
-    # Escalonado: si otro stream esta a punto de abrir su conexion, este
-    # job espera lo necesario para no coincidir (ver _reserve_start_slot).
-    stagger_delay = _reserve_start_slot()
+    # Los frames capturados por el frontend (canvas sobre el <video>)
+    # llegan aqui via WebSocket (ver ws_endpoint) y el detector los
+    # consume del otro lado, en su propio proceso.
+    frame_queue: "mp.Queue" = mp.Queue()
 
     process = mp.Process(
         target=worker,
-        args=(url, payload.marcas, queue, video_ready_queue, stagger_delay),
+        args=(payload.marcas, frame_queue, queue, payload.stream),
         name=f"job-{job_id}",
         daemon=True,
     )
@@ -381,11 +321,11 @@ async def start_detection(payload: StartPayload):
     jobs[job_id] = {
         "process": process,
         "queue": queue,
+        "frame_queue": frame_queue,
         "sockets": [],
         "poller_task": poller_task,
         "stream": payload.stream,
         "marcas": payload.marcas,
-        "video_ready_queue": video_ready_queue,
     }
 
     # Persist the PID to disk: if uvicorn restarts while this job is still
@@ -468,19 +408,18 @@ async def ws_endpoint(websocket: WebSocket, job_id: str):
     job["sockets"].append(websocket)
     try:
         while True:
-            # Ademas de mantener viva la conexion / detectar desconexiones,
-            # el frontend manda {"type": "video_ready", "load_ms": N} en
-            # cuanto el <video> HLS empieza a reproducir (evento
-            # "playing"), lo que desbloquea la espera del detector antes
-            # de su primera captura y le pasa los ms de carga medidos.
+            # El frontend manda aqui cada frame que captura del <video>
+            # ({"type": "frame", "image_data": "<jpeg en base64>"}), en vez
+            # de que el backend se conecte el mismo al stream en directo.
             message = await websocket.receive_text()
             try:
                 data = json.loads(message)
             except (json.JSONDecodeError, TypeError):
                 continue
-            if isinstance(data, dict) and data.get("type") == "video_ready":
-                load_ms = data.get("load_ms") or 0
-                job["video_ready_queue"].put(load_ms)
+            if isinstance(data, dict) and data.get("type") == "frame":
+                image_data = data.get("image_data")
+                if image_data:
+                    job["frame_queue"].put(image_data)
     except WebSocketDisconnect:
         if websocket in job["sockets"]:
             job["sockets"].remove(websocket)

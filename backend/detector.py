@@ -1,17 +1,9 @@
 import base64
-import contextlib
 import logging
-import multiprocessing
-import os
-import signal
 import time
 from datetime import datetime
-from multiprocessing import Process
 from pathlib import Path
 from queue import Empty
-
-if multiprocessing.current_process().name != "MainProcess":
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 import cv2
 import numpy as np
@@ -20,15 +12,11 @@ from skimage.metrics import structural_similarity as ssim
 import stats_db
 
 DEFAULT_INTERVAL    = 10
-# Tope de espera a que el frontend confirme que el <video> HLS ya esta
-# reproduciendo antes de disparar la primera captura. Si la señal nunca
-# llega (cliente cerrado, error de red en el WS, etc.) no nos quedamos
-# esperando para siempre: arrancamos igual pasado este tiempo.
-VIDEO_READY_TIMEOUT_SECONDS = 20
-# Margen extra sobre los ms de carga reportados por el frontend: cubre el
-# hueco entre "el <video> ya pinta el primer frame" y "el segmento HLS que
-# se ve en pantalla ya esta realmente estable/actualizado".
-EXTRA_VIDEO_SYNC_DELAY_SECONDS = 1.5
+# Tope de tiempo real sin recibir NINGUN frame del frontend antes de dar
+# el job por muerto (p.ej. el usuario cerro la pestaña sin que llegara a
+# disparar el beforeunload/sendBeacon). El propio proceso se mata igual
+# con /stop, esto es solo una red de seguridad.
+NO_FRAME_TIMEOUT_SECONDS = 180
 DEFAULT_CONF        = 0.25
 DEFAULT_DET_MODEL   = "yolo26n.pt"
 DEFAULT_CLS_MARCA   = "best.pt"
@@ -51,9 +39,6 @@ SSIM_CROP_SIZE      = 240
 # the letterboxed content ends up misaligned and SSIM drops sharply
 # (~0.2) even though it's literally the same vehicle in the same frame.
 CROP_IOU_THRESHOLD  = 0.5
-MAX_RETRIES         = 5
-IMMEDIATE_RETRIES   = 3
-IMMEDIATE_RETRY_DELAY = 3
 MIN_CONF_MARCA      = 0
 DEFAULT_MIN_SHARPNESS = 8
 VEHICLE_CLASSES     = {2: "car"}
@@ -94,8 +79,8 @@ status = logging.getLogger("status")
 
 
 # -- Events to React/FastAPI ----------------------------------------------------
-# Optionally pushes each event to a multiprocessing.Queue so the backend
-# can forward it over WebSocket.
+# Optionally pushes each event to a queue.Queue so the backend can
+# forward it over WebSocket.
 
 def emit(queue, event_type: str, **data) -> None:
     if queue is None:
@@ -111,49 +96,23 @@ def emit(queue, event_type: str, **data) -> None:
         log.exception("No se pudo emitir evento %s", event_type)
 
 
-# -- FFmpeg suppression --------------------------------------------------------
+# -- Frame decoding --------------------------------------------------------------
+#
+# Los frames ya NO los captura el backend conectandose el mismo al stream
+# HLS (eso causaba desincronizacion con 2+ streams a la vez por
+# contencion de red - ver historial de este archivo). En vez de eso, el
+# frontend captura un frame del <video> que el usuario ya esta viendo
+# (perfectamente sincronizado por definicion) y lo manda en base64 por el
+# WebSocket; api.py lo deja en `frame_queue` y aqui solo se decodifica.
 
-@contextlib.contextmanager
-def suppress_ffmpeg_output():
-    devnull_fd    = os.open(os.devnull, os.O_WRONLY)
-    old_stderr_fd = os.dup(2)
-    os.dup2(devnull_fd, 2)
+def decode_frame(image_b64: str) -> np.ndarray | None:
     try:
-        yield
-    finally:
-        os.dup2(old_stderr_fd, 2)
-        os.close(old_stderr_fd)
-        os.close(devnull_fd)
-
-
-# -- Frame capture -------------------------------------------------------------
-
-def try_capture_frame(url: str) -> np.ndarray | None:
-    with suppress_ffmpeg_output():
-        cap    = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
-        opened = cap.isOpened()
-        if opened:
-            for _ in range(5):
-                cap.grab()
-            ret, frame = cap.read()
-            cap.release()
-        else:
-            ret, frame = False, None
-    if not opened:
+        raw   = base64.b64decode(image_b64)
+        arr   = np.frombuffer(raw, dtype=np.uint8)
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    except Exception:
         return None
-    if not ret or frame is None:
-        return None
-    return frame
-
-
-def capture_frame(url: str) -> np.ndarray | None:
-    for attempt in range(1, IMMEDIATE_RETRIES + 1):
-        frame = try_capture_frame(url)
-        if frame is not None:
-            return frame
-        if attempt < IMMEDIATE_RETRIES:
-            time.sleep(IMMEDIATE_RETRY_DELAY)
-    return None
+    return frame if frame is not None and frame.size > 0 else None
 
 
 # -- Deduplication -------------------------------------------------------------
@@ -214,10 +173,13 @@ def is_sharp(crop: np.ndarray, min_sharpness: float) -> bool:
 def load_model(path: str):
     try:
         from ultralytics import YOLO
+        import torch
     except ImportError:
         raise SystemExit("ultralytics not installed.")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = YOLO(path)
-    log.info("Model loaded: %s", path)
+    model.to(device)
+    log.info("Model loaded: %s (device=%s)", path, device)
     return model
 
 
@@ -284,8 +246,8 @@ def save_latest_frame(frame: np.ndarray) -> str | None:
 # -- Match saving --------------------------------------------------------------
 
 def save_match(frame: np.ndarray, crop: np.ndarray, marca: str,
-               marca_conf: float, url: str, queue=None) -> None:
-    log.info("MATCH ENCONTRADO | marca: %s (%.2f) | stream: %s", marca, marca_conf, url)
+               marca_conf: float, label: str, queue=None) -> None:
+    log.info("MATCH ENCONTRADO | marca: %s (%.2f) | stream: %s", marca, marca_conf, label)
 
     stats_db.increment_brand(marca)
 
@@ -293,7 +255,7 @@ def save_match(frame: np.ndarray, crop: np.ndarray, marca: str,
         queue, "match",
         marca=marca,
         confianza=round(marca_conf, 4),
-        stream=url,
+        stream=label,
         frame_data=_encode_image(frame, IMAGE_FORMAT_FRAME),
         crop_data=_encode_image(crop, IMAGE_FORMAT_CROP),
     )
@@ -329,117 +291,48 @@ def save_discarded(crop: np.ndarray, reason: str, queue=None) -> None:
     )
 
 
-# -- Interactive prompt --------------------------------------------------------
-# Kept so the script can still be used by hand from the terminal.
+# -- Main detection loop ---------------------------------------------------------
+#
+# El frontend es quien decide cuando captura un frame (cada
+# DEFAULT_INTERVAL, del <video> que el usuario ya esta viendo) y lo manda
+# por WebSocket; api.py lo deposita en `frame_queue`. Este bucle no hace
+# ninguna captura de red propia: solo espera el siguiente frame, lo
+# decodifica y corre deteccion/clasificacion sobre el.
 
-def prompt_streams() -> list[str]:
-    names = list(STREAMS_DISPONIBLES.keys())
-    urls  = list(STREAMS_DISPONIBLES.values())
-    print("\nSelecciona stream(s) (numeros separados por coma, ej: 1,3):")
-    for i, name in enumerate(names, 1):
-        print(f"  {i}. {name}")
-    while True:
-        raw     = input(f"stream(s) (1-{len(names)}): ").strip()
-        indices = [p.strip() for p in raw.split(",")]
-        if all(p.isdigit() and 1 <= int(p) <= len(names) for p in indices):
-            selected = [urls[int(p) - 1] for p in indices]
-            labels   = [names[int(p) - 1] for p in indices]
-            print(f"  Streams seleccionados: {', '.join(labels)}")
-            return selected
-        print(f"  Entrada invalida. Introduce numeros entre 1 y {len(names)} separados por coma.")
-
-
-def prompt_marcas() -> list[str]:
-    print("\nSelecciona marca(s) (numeros separados por coma, ej: 1,3):")
-    for i, marca in enumerate(MARCAS_DISPONIBLES, 1):
-        print(f"  {i}. {marca}")
-    while True:
-        raw     = input(f"marca(s) (1-{len(MARCAS_DISPONIBLES)}): ").strip()
-        indices = [p.strip() for p in raw.split(",")]
-        if all(p.isdigit() and 1 <= int(p) <= len(MARCAS_DISPONIBLES) for p in indices):
-            marcas = [MARCAS_DISPONIBLES[int(p) - 1] for p in indices]
-            print(f"\nBuscando: {', '.join(marcas)}\n")
-            return marcas
-        print(f"  Entrada invalida. Introduce numeros entre 1 y {len(MARCAS_DISPONIBLES)} separados por coma.")
-
-
-# -- Main search loop ----------------------------------------------------------
-
-def stream_label(url: str) -> str:
-    for name, stream_url in STREAMS_DISPONIBLES.items():
-        if stream_url == url:
-            return name
-    return url
-
-
-def run(url: str, marcas: list[str], det_model, cls_marca_model,
-        queue=None, video_ready_queue=None, stagger_delay: float = 0.0) -> None:
+def run(marcas: list[str], det_model, cls_marca_model, frame_queue,
+        queue=None, label: str = "") -> None:
 
     # Memory of recent crops (not just the last frame): each entry is
     # {"prepared": grayscale+resized crop, "last_seen": timestamp}. A
     # parked vehicle that YOLO fails to detect in a single frame
     # (occlusion, confidence just under the threshold, etc.) shouldn't be
     # counted as "new" again as soon as it reappears shortly after.
-    # Measured in wall-clock time (not frame count) so CROP_MEMORY_SECONDS
-    # stays accurate regardless of interval changes or capture retries.
-    known_crops           = []
-    consecutive_failures = 0
-    total_frames         = 0
-    total_matches        = 0
-    start_time           = time.time()
-    label                = stream_label(url)
+    known_crops    = []
+    total_frames   = 0
+    total_matches  = 0
+    start_time     = time.time()
 
     log.info("Buscando: %s", ", ".join(marcas))
-    log.info("Stream: %s", url)
-    log.info("Intervalo: %ds | Threshold SSIM recortes: %.3f | YOLO conf: %.2f", DEFAULT_INTERVAL, CROP_DEDUP_THRESHOLD, DEFAULT_CONF)
-    log.info("Iniciando busqueda... (Ctrl+C para detener)\n")
+    log.info("[%s] Esperando frames capturados por el frontend...", label)
 
     emit(queue, "started", stream=label, marcas=marcas)
 
-    # Espera a que el frontend confirme (via WebSocket) que el <video> HLS
-    # ya esta reproduciendo, para que la primera captura no ocurra antes de
-    # que haya nada visible en pantalla. Si no llega a tiempo, arrancamos
-    # igual: es mejor una captura desincronizada que un job que nunca hace
-    # nada. El mensaje trae ademas los ms que tardo el navegador en pintar
-    # ese primer frame (medidos en StreamPlayer): se suman aqui como delay
-    # extra, para que la primera captura no ocurra justo en el instante en
-    # que arranca el <video> sino tras el mismo margen que tardo en cargar.
-    if video_ready_queue is not None:
-        emit(queue, "waiting_for_video", stream=label)
-        try:
-            load_ms = video_ready_queue.get(timeout=VIDEO_READY_TIMEOUT_SECONDS)
-        except Empty:
-            load_ms = 0
-        if load_ms:
-            time.sleep(load_ms / 1000 + EXTRA_VIDEO_SYNC_DELAY_SECONDS)
-
-    # Escalonado entre streams: si api.py detecto que otro stream esta a
-    # punto de abrir su conexion, este espera aqui para no coincidir con
-    # el (varias conexiones TCP/TLS nuevas casi al mismo instante podian
-    # fallar - ver _reserve_start_slot en api.py).
-    if stagger_delay > 0:
-        emit(queue, "waiting_for_slot", stream=label, seconds=round(stagger_delay, 1))
-        time.sleep(stagger_delay)
-
     try:
         while True:
-            capture_start = time.time()
-            frame = capture_frame(url)
+            try:
+                image_b64 = frame_queue.get(timeout=NO_FRAME_TIMEOUT_SECONDS)
+            except Empty:
+                log.error("[%s] Sin frames del frontend durante %ds. Deteniendo.",
+                          label, NO_FRAME_TIMEOUT_SECONDS)
+                emit(queue, "stopped", stream=label, reason="no_frame_timeout")
+                break
 
+            frame = decode_frame(image_b64)
             if frame is None:
-                consecutive_failures += 1
-                log.warning("[%s] Capture failed (%d/%d).", label, consecutive_failures, MAX_RETRIES)
-                emit(queue, "capture_failed", stream=label,
-                     attempt=consecutive_failures, max_retries=MAX_RETRIES)
-                if consecutive_failures >= MAX_RETRIES:
-                    log.error("Max retries reached. Stopping.")
-                    emit(queue, "stopped", stream=label, reason="max_retries")
-                    break
-                time.sleep(DEFAULT_INTERVAL)
+                log.warning("[%s] Frame recibido invalido, descartado.", label)
                 continue
 
-            consecutive_failures = 0
-            total_frames        += 1
+            total_frames += 1
 
             latest_frame_data = save_latest_frame(frame)
             boxes = detect_vehicles(frame, det_model, DEFAULT_CONF)
@@ -505,7 +398,7 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
                 matched, marca = matches_any_marca(pred_marca, conf_marca, marcas)
                 if matched:
                     total_matches += 1
-                    save_match(frame, crop, marca, conf_marca, url, queue=queue)
+                    save_match(frame, crop, marca, conf_marca, label, queue=queue)
                 else:
                     save_detected(crop, pred_marca, conf_marca, queue=queue)
                     log.info("Detectado: %s (%.2f)", pred_marca, conf_marca)
@@ -518,8 +411,6 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
                 if now - k["last_seen"] <= CROP_MEMORY_SECONDS
             ]
 
-            time.sleep(max(0, DEFAULT_INTERVAL - (time.time() - capture_start)))
-
     except KeyboardInterrupt:
         elapsed = int(time.time() - start_time)
         log.info("Busqueda detenida. Elapsed: %ds | Frames: %d | Matches: %d",
@@ -530,18 +421,10 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
 
 # -- Worker (subprocess) --------------------------------------------------------
 
-def worker(url: str, marcas: list[str], queue=None, video_ready_queue=None,
-           stagger_delay: float = 0.0) -> None:
+def worker(marcas: list[str], frame_queue, queue=None, label: str = "") -> None:
     output_dir = Path("resultados")
     output_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(output_dir / "search.log")
-
-    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-        "loglevel;quiet"
-        "|timeout;10000000"
-        "|stimeout;10000000"
-        "|user_agent;Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    )
 
     try:
         det_model       = load_model(DEFAULT_DET_MODEL)
@@ -550,56 +433,4 @@ def worker(url: str, marcas: list[str], queue=None, video_ready_queue=None,
         emit(queue, "error", message=f"Error cargando modelos: {exc}")
         raise
 
-    run(url, marcas, det_model, cls_marca_model, queue=queue,
-        video_ready_queue=video_ready_queue, stagger_delay=stagger_delay)
-
-
-# -- Entry point (manual use from the terminal) ---------------------------------
-
-if __name__ == "__main__":
-    os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
-    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-        "loglevel;quiet"
-        "|timeout;10000000"
-        "|stimeout;10000000"
-        "|user_agent;Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    )
-
-    output_dir = Path("resultados")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    setup_logging(output_dir / "search.log")
-    stats_db.init_db()
-
-    urls   = prompt_streams()
-    marcas = prompt_marcas()
-
-    if len(urls) == 1:
-        det_model       = load_model(DEFAULT_DET_MODEL)
-        cls_marca_model = load_model(DEFAULT_CLS_MARCA)
-        run(urls[0], marcas, det_model, cls_marca_model)
-    else:
-        processes = [
-            Process(target=worker, args=(url, marcas), name=f"stream-{i+1}")
-            for i, url in enumerate(urls)
-        ]
-
-        started = []
-        try:
-            for i, p in enumerate(processes):
-                p.start()
-                started.append(p)
-                if i < len(processes) - 1:
-                    time.sleep(5)
-
-            while any(p.is_alive() for p in started):
-                for p in started:
-                    p.join(timeout=0.5)
-            log.info("All streams finished.")
-        except KeyboardInterrupt:
-            log.info("Stopping all streams...")
-            for p in started:
-                if p.is_alive():
-                    p.terminate()
-            for p in started:
-                p.join()
-            log.info("All streams stopped.")
+    run(marcas, det_model, cls_marca_model, frame_queue, queue=queue, label=label)

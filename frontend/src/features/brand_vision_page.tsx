@@ -24,7 +24,7 @@ export function VehicleBrandDetector() {
     events,
     matches,
     persistedBrandCounts,
-    notifyVideoReady,
+    sendFrame,
   } = useVehicleDetection()
 
   // El backend solo soporta UN stream por job (/start recibe "stream", no
@@ -46,9 +46,8 @@ export function VehicleBrandDetector() {
   // sea true (ver el efecto de mas abajo), asi que arranca en false y se
   // resetea cada vez que se detiene la deteccion.
   const [videoStarted, setVideoStarted] = useState(false)
-  const handleStreamFirstFrame = (ms: number) => {
+  const handleStreamFirstFrame = () => {
     setVideoStarted(true)
-    notifyVideoReady(ms)
   }
 
   // Cuenta atras hasta la proxima captura del backend: se reinicia cada vez
@@ -153,6 +152,8 @@ export function VehicleBrandDetector() {
             }
             secondsToNextCapture={secondsToNextCapture}
             onFirstFrame={handleStreamFirstFrame}
+            captureIntervalSeconds={options.capture_interval}
+            onFrameCapture={sendFrame}
           />
 
           <BrandFilter

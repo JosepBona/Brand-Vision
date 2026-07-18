@@ -7,17 +7,30 @@ import type { StreamPlayerProps } from "@/types/brand-vision-page"
 /**
  * Reproduce un stream HLS (.m3u8) directamente en el navegador.
  *
- * OJO: esto es independiente del backend Python. detector.py solo
- * captura un frame cada 10s para analizarlo con YOLO, no retransmite
- * video. Aqui el <video> pide los segmentos directamente al servidor
- * origen (Nevada DOT), asi que si ese servidor no manda headers CORS
- * permisivos, esto fallara con un error de red / manifestParsingError,
- * NO con un error visible de "CORS" explicito (hls.js lo reporta como
- * networkError). Si ves errores repetidos aqui, lo mas probable es
- * CORS y hace falta un proxy en el backend.
+ * OJO: el <video> pide los segmentos directamente al servidor origen
+ * (Nevada DOT), asi que si ese servidor no manda headers CORS permisivos,
+ * esto fallara con un error de red / manifestParsingError, NO con un
+ * error visible de "CORS" explicito (hls.js lo reporta como networkError).
+ * Si ves errores repetidos aqui, lo mas probable es CORS y hace falta un
+ * proxy en el backend.
+ *
+ * Ademas de reproducir, este componente es quien captura los frames que
+ * se analizan: en vez de que el backend se conecte el mismo al stream
+ * (lo que causaba desincronizacion con varios streams a la vez por
+ * contencion de red - ver historial de detector.py), se recorta un
+ * frame de este mismo <video> cada `captureIntervalSeconds` via
+ * <canvas> y se manda al backend. Es, por definicion, el mismo frame que
+ * el usuario esta viendo.
  */
-export function StreamPlayer({ url, className, onFirstFrame }: StreamPlayerProps) {
+export function StreamPlayer({
+  url,
+  className,
+  onFirstFrame,
+  captureIntervalSeconds,
+  onFrameCapture,
+}: StreamPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [status, setStatus] = useState<"loading" | "playing" | "error">(
     "loading"
   )
@@ -130,6 +143,37 @@ export function StreamPlayer({ url, className, onFirstFrame }: StreamPlayerProps
     setStatus("error")
     setErrorDetail("Este navegador no soporta HLS ni MSE")
   }, [url])
+
+  // Captura periodica: solo mientras el <video> esta realmente
+  // reproduciendo (no durante "loading"/"error", donde no hay nada valido
+  // que recortar). Un <canvas> del tamaño real del video (no del <video>
+  // en pantalla, que puede estar escalado por CSS) evita perder
+  // resolucion en el recorte.
+  useEffect(() => {
+    if (status !== "playing" || !onFrameCapture) return
+    const video = videoRef.current
+    if (!video) return
+
+    const intervalMs = Math.max(1, captureIntervalSeconds || 10) * 1000
+
+    const captureFrame = () => {
+      if (!video.videoWidth || !video.videoHeight) return
+      const canvas = canvasRef.current ?? document.createElement("canvas")
+      canvasRef.current = canvas
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      onFrameCapture(canvas.toDataURL("image/jpeg", 0.85))
+    }
+
+    // Primera captura casi inmediata (el video ya esta reproduciendo),
+    // luego cada intervalo - no esperar al primer tick del setInterval.
+    captureFrame()
+    const id = window.setInterval(captureFrame, intervalMs)
+    return () => window.clearInterval(id)
+  }, [status, captureIntervalSeconds, onFrameCapture])
 
   return (
     <div className={className} style={{ position: "relative" }}>

@@ -3,9 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000";
 
-// Cuanto esperar a que /options responda antes de asumir que el backend
-// esta caido y mostrar la interfaz con datos de muestra (ver mas abajo).
-const BACKEND_CHECK_TIMEOUT_MS = 5000;
+// Cuanto esperar a que /options responda antes de avisar que el backend
+// esta caido (ver backendStatus). Los datos de muestra NO dependen de
+// este timeout - se cargan siempre desde el primer render (ver
+// FALLBACK_OPTIONS/FALLBACK_BRAND_COUNTS mas abajo), independientemente
+// de si el backend responde o no: son responsabilidades separadas.
+const BACKEND_DOWN_ALERT_MS = 2000;
 
 // Reflejan los valores reales de detector.py (STREAMS_DISPONIBLES /
 // MARCAS_DISPONIBLES): solo se usan si el backend no responde a tiempo,
@@ -84,12 +87,10 @@ interface StartResponse {
  * un job de deteccion y escucha eventos en tiempo real por WebSocket.
  */
 export function useVehicleDetection() {
-  const [options, setOptions] = useState<DetectionOptions>({
-    streams: [],
-    stream_urls: {},
-    marcas: [],
-    capture_interval: 0,
-  });
+  // Arrancan ya con los datos de muestra (no un estado vacio a la espera
+  // de un timeout): si el backend responde, se sobrescriben con los
+  // reales; si no, la interfaz nunca se ve vacia/rota mientras tanto.
+  const [options, setOptions] = useState<DetectionOptions>(FALLBACK_OPTIONS);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<DetectionStatus>("idle");
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
@@ -101,7 +102,7 @@ export function useVehicleDetection() {
   // suman encima en el componente que consume este hook.
   const [persistedBrandCounts, setPersistedBrandCounts] = useState<
     Record<string, number>
-  >({});
+  >(FALLBACK_BRAND_COUNTS);
   const wsRef = useRef<WebSocket | null>(null);
   const jobIdRef = useRef<string | null>(null);
 
@@ -132,29 +133,23 @@ export function useVehicleDetection() {
   }, []);
 
   useEffect(() => {
-    // Si /options no responde a tiempo, se asume el backend caido: se
-    // rellena la interfaz con datos de muestra (para que no se vea vacia)
-    // y se avisa aparte (ver backendStatus) de que la deteccion en vivo
-    // no esta disponible. Usa setState funcional para no pisar datos
-    // reales si llegan justo despues de que salte este timeout.
-    const timeoutId = window.setTimeout(() => {
+    // Unica responsabilidad de este timeout: avisar (backendStatus) de
+    // que el backend no responde. Los datos de muestra ya estan puestos
+    // desde el estado inicial, asi que esto no toca options/brandCounts.
+    const alertTimeoutId = window.setTimeout(() => {
       setBackendStatus((prev) => (prev === "online" ? prev : "offline"));
-      setOptions((prev) => (prev.streams.length > 0 ? prev : FALLBACK_OPTIONS));
-      setPersistedBrandCounts((prev) =>
-        Object.keys(prev).length > 0 ? prev : FALLBACK_BRAND_COUNTS
-      );
-    }, BACKEND_CHECK_TIMEOUT_MS);
+    }, BACKEND_DOWN_ALERT_MS);
 
     fetch(`${API_BASE}/options`)
       .then((res) => res.json())
       .then((data: DetectionOptions) => {
-        window.clearTimeout(timeoutId);
+        window.clearTimeout(alertTimeoutId);
         setBackendStatus("online");
         setOptions(data);
       })
       .catch(() => {
-        // El timeout de arriba se encarga de mostrar el fallback; un
-        // fallo puntual aqui no debe tumbar el status del job en curso.
+        // El timeout de arriba se encarga de avisar; un fallo puntual
+        // aqui no debe tumbar el status del job en curso.
       });
 
     fetch(`${API_BASE}/stats/brands`)
@@ -165,7 +160,7 @@ export function useVehicleDetection() {
       .catch(() => {});
 
     return () => {
-      window.clearTimeout(timeoutId);
+      window.clearTimeout(alertTimeoutId);
       wsRef.current?.close();
     };
   }, []);
@@ -223,18 +218,15 @@ export function useVehicleDetection() {
     []
   );
 
-  // Llamado cuando el <video> HLS del frontend realmente empieza a
-  // reproducir (evento nativo "playing" en StreamPlayer): le avisa al
-  // backend por el mismo WebSocket para que la primera captura del
-  // detector espere a este momento en vez de dispararse a ciegas apenas
-  // arranca el proceso. `loadMs` es lo que tardo el navegador en llegar a
-  // ese primer frame (medido en StreamPlayer): el backend lo suma como
-  // delay extra antes de capturar, para compensar el tiempo en que el
-  // usuario todavia no vio nada en pantalla (ver video_ready_queue en
-  // api.py/detector.py).
-  const notifyVideoReady = useCallback((loadMs: number) => {
+  // Llamado por StreamPlayer cada vez que recorta un frame del <video>
+  // (canvas): se lo manda al backend por el mismo WebSocket del job, en
+  // vez de que el backend se conecte el mismo al stream. `dataUrl` es lo
+  // que devuelve canvas.toDataURL() - se le quita el prefijo
+  // "data:image/jpeg;base64," porque el backend solo necesita los bytes.
+  const sendFrame = useCallback((dataUrl: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "video_ready", load_ms: loadMs }));
+      const base64 = dataUrl.split(",")[1] ?? dataUrl;
+      wsRef.current.send(JSON.stringify({ type: "frame", image_data: base64 }));
     }
   }, []);
 
@@ -264,6 +256,6 @@ export function useVehicleDetection() {
     matches,
     jobId,
     persistedBrandCounts,
-    notifyVideoReady,
+    sendFrame,
   };
 }

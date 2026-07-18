@@ -4,6 +4,11 @@ export interface StreamPlayerProps {
   url: string
   className?: string
   onFirstFrame?: (ms: number) => void
+  // Cada cuantos segundos se recorta un frame del <video> para mandarlo a
+  // detectar. Si se omite onFrameCapture, no se captura nada (solo se
+  // reproduce).
+  captureIntervalSeconds?: number
+  onFrameCapture?: (dataUrl: string) => void
 }
 
 export interface BrandStat {
@@ -28,6 +33,8 @@ export interface StreamCarouselProps {
   onSelectStream: (id: string) => void
   secondsToNextCapture: number
   onFirstFrame: (ms: number) => void
+  captureIntervalSeconds: number
+  onFrameCapture: (dataUrl: string) => void
 }
 
 export interface BrandFilterProps {

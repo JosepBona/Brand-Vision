@@ -33,6 +33,8 @@ export function StreamCarousel({
   onSelectStream,
   secondsToNextCapture,
   onFirstFrame,
+  captureIntervalSeconds,
+  onFrameCapture,
 }: StreamCarouselProps) {
   const streamScrollerRef = useRef<HTMLDivElement>(null)
   const [streamEdges, setStreamEdges] = useState({
@@ -119,6 +121,8 @@ export function StreamCarousel({
                     url={streamUrls[streamId]}
                     className="h-full w-full"
                     onFirstFrame={onFirstFrame}
+                    captureIntervalSeconds={captureIntervalSeconds}
+                    onFrameCapture={onFrameCapture}
                   />
                   <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
