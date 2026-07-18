@@ -10,18 +10,26 @@ import stream1 from "@/assets/stream1.jpg"
 import stream2 from "@/assets/stream2.jpg"
 import stream3 from "@/assets/stream3.jpg"
 import stream4 from "@/assets/stream4.jpg"
+import testRecordingThumbnail from "@/assets/test-recording.jpg"
 
-// Miniaturas locales, asignadas en orden a los streams que devuelva el
-// backend (/options). Si hay mas streams que miniaturas, los sobrantes
-// simplemente no muestran imagen.
-const thumbnails = [stream1, stream2, stream3, stream4]
+// Miniaturas locales, asignadas por nombre de stream (no por posicion:
+// el orden en options.streams puede cambiar). Si un stream no tiene
+// entrada aqui, simplemente no muestra imagen (ver fallback mas abajo).
+const thumbnailsByStream: Record<string, string> = {
+  "Nevada-1": stream1,
+  "Nevada-2": stream2,
+  "Nevada-3": stream3,
+  "Nevada-4": stream4,
+  "test-recording": testRecordingThumbnail,
+}
 
-// TODO: quitar una vez validado el carrusel. Streams dummy solo para
-// visualizar el scroll/las flechas con mas de 3 elementos; no existen
-// en el backend asi que no se pueden seleccionar para iniciar deteccion.
-// Nevada-4 ya es un stream real (STREAMS_DISPONIBLES en detector.py), asi
-// que sale de options.streams y no necesita entrada demo aqui.
-const DEMO_EXTRA_STREAMS = ["Nevada-5 (demo)", "Nevada-6 (demo)"]
+// TODO: quitar una vez validado el carrusel. Stream dummy solo para
+// visualizar el scroll/las flechas con mas de 3 elementos; no existe en
+// el backend asi que no se puede seleccionar para iniciar deteccion.
+// Nevada-1..4 y test-recording ya son streams reales (STREAMS_DISPONIBLES
+// en detector.py), asi que salen de options.streams y no necesitan
+// entrada demo aqui.
+const DEMO_EXTRA_STREAMS = ["Nevada-6 (demo)"]
 
 const STREAM_SCROLL_AMOUNT = 240
 
@@ -149,9 +157,9 @@ export function StreamCarousel({
             onScroll={updateStreamEdges}
             className="flex min-w-0 [scrollbar-width:none] gap-3 overflow-x-auto scroll-smooth px-1 pt-1 pb-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
-            {displayStreams.map((streamId, idx) => {
+            {displayStreams.map((streamId) => {
               const active = selectedStream === streamId
-              const thumbnail = thumbnails[idx]
+              const thumbnail = thumbnailsByStream[streamId]
               const isDemo = !(streamId in streamUrls)
 
               return (

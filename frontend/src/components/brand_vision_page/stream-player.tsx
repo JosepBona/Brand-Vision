@@ -89,6 +89,31 @@ export function StreamPlayer({
       })
     }
 
+    // Grabacion local (p.ej. /test-recording.mp4, servida por el propio
+    // frontend): no es HLS, se reproduce directo sin hls.js. En loop para
+    // poder probar la deteccion de forma continua sin depender de un
+    // stream en vivo real.
+    const isLocalRecording = /\.mp4(\?|$)/i.test(url)
+    if (isLocalRecording) {
+      video.loop = true
+      video.src = url
+      const onLoaded = () => {
+        setStatus("playing")
+        tryPlay()
+      }
+      const onError = () => {
+        setStatus("error")
+        setErrorDetail("No se pudo cargar la grabacion de prueba")
+      }
+      video.addEventListener("loadedmetadata", onLoaded)
+      video.addEventListener("error", onError)
+      return () => {
+        video.removeEventListener("loadedmetadata", onLoaded)
+        video.removeEventListener("error", onError)
+        video.loop = false
+      }
+    }
+
     // hls.js primero: es mas fiable que la deteccion nativa via
     // canPlayType, que en Edge/Windows a veces reporta soporte HLS
     // parcial (Windows Media Foundation) y falla de forma inconsistente.

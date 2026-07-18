@@ -14,7 +14,7 @@ const BACKEND_DOWN_ALERT_MS = 2000;
 // MARCAS_DISPONIBLES): solo se usan si el backend no responde a tiempo,
 // para que la interfaz se vea igual de poblada que con el backend
 // arriba, en vez de mostrar listas vacias.
-const FALLBACK_STREAMS = ["Nevada-1", "Nevada-2", "Nevada-3", "Nevada-4"];
+const FALLBACK_STREAMS = ["Nevada-1", "Nevada-2", "Nevada-3", "test-recording", "Nevada-4"];
 const FALLBACK_MARCAS = [
   "tesla", "ram", "jeep", "subaru", "toyota", "chevrolet",
   "ford", "gmc", "nissan", "lexus", "mercedes", "honda", "kia",
@@ -23,8 +23,14 @@ const FALLBACK_OPTIONS: DetectionOptions = {
   streams: FALLBACK_STREAMS,
   // Sin URL real (el backend esta caido, no hay stream que reproducir de
   // verdad): solo hacen falta los nombres para que el carrusel y el
-  // selector de marcas se vean completos.
-  stream_urls: Object.fromEntries(FALLBACK_STREAMS.map((s) => [s, ""])),
+  // selector de marcas se vean completos. "test-recording" es la
+  // excepcion - es un archivo estatico servido por el propio frontend
+  // (frontend/public/test-recording-v2.mp4), asi que sigue funcionando
+  // aunque el backend este caido.
+  stream_urls: {
+    ...Object.fromEntries(FALLBACK_STREAMS.map((s) => [s, ""])),
+    "test-recording": "/test-recording-v2.mp4",
+  },
   marcas: FALLBACK_MARCAS,
   capture_interval: 10,
 };
