@@ -373,7 +373,7 @@ def stream_label(url: str) -> str:
 
 
 def run(url: str, marcas: list[str], det_model, cls_marca_model,
-        queue=None, video_ready_queue=None) -> None:
+        queue=None, video_ready_queue=None, stagger_delay: float = 0.0) -> None:
 
     # Memory of recent crops (not just the last frame): each entry is
     # {"prepared": grayscale+resized crop, "last_seen": timestamp}. A
@@ -412,6 +412,14 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
             load_ms = 0
         if load_ms:
             time.sleep(load_ms / 1000 + EXTRA_VIDEO_SYNC_DELAY_SECONDS)
+
+    # Escalonado entre streams: si api.py detecto que otro stream esta a
+    # punto de abrir su conexion, este espera aqui para no coincidir con
+    # el (varias conexiones TCP/TLS nuevas casi al mismo instante podian
+    # fallar - ver _reserve_start_slot en api.py).
+    if stagger_delay > 0:
+        emit(queue, "waiting_for_slot", stream=label, seconds=round(stagger_delay, 1))
+        time.sleep(stagger_delay)
 
     try:
         while True:
@@ -522,7 +530,8 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
 
 # -- Worker (subprocess) --------------------------------------------------------
 
-def worker(url: str, marcas: list[str], queue=None, video_ready_queue=None) -> None:
+def worker(url: str, marcas: list[str], queue=None, video_ready_queue=None,
+           stagger_delay: float = 0.0) -> None:
     output_dir = Path("resultados")
     output_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(output_dir / "search.log")
@@ -542,7 +551,7 @@ def worker(url: str, marcas: list[str], queue=None, video_ready_queue=None) -> N
         raise
 
     run(url, marcas, det_model, cls_marca_model, queue=queue,
-        video_ready_queue=video_ready_queue)
+        video_ready_queue=video_ready_queue, stagger_delay=stagger_delay)
 
 
 # -- Entry point (manual use from the terminal) ---------------------------------

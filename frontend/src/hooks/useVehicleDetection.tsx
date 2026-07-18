@@ -52,6 +52,7 @@ export function useVehicleDetection() {
   });
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<DetectionStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [events, setEvents] = useState<DetectionEvent[]>([]);
   // Total acumulado por marca de TODAS las sesiones (persistido en el
   // backend), no solo de los "match" recibidos por WebSocket en esta
@@ -108,6 +109,7 @@ export function useVehicleDetection() {
   const start = useCallback(
     async (stream: string, marcas: string[]) => {
       setStatus("starting");
+      setErrorMessage(null);
       const res = await fetch(`${API_BASE}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -115,6 +117,14 @@ export function useVehicleDetection() {
       });
 
       if (!res.ok) {
+        // El backend manda el detalle en {"detail": "..."} (convencion de
+        // FastAPI/HTTPException) - por ejemplo, "stream ya en uso por otro
+        // usuario" (409). Si no hay body legible, cae a un mensaje generico.
+        const message = await res
+          .json()
+          .then((body: { detail?: string }) => body.detail)
+          .catch(() => undefined);
+        setErrorMessage(message ?? "No se pudo iniciar la deteccion.");
         setStatus("error");
         return;
       }
@@ -174,6 +184,7 @@ export function useVehicleDetection() {
     start,
     stop,
     status,
+    errorMessage,
     events,
     matches,
     jobId,

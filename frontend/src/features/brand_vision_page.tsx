@@ -17,6 +17,7 @@ export function VehicleBrandDetector() {
     start,
     stop,
     status,
+    errorMessage,
     events,
     matches,
     persistedBrandCounts,
@@ -29,6 +30,13 @@ export function VehicleBrandDetector() {
   const [selectedBrands, setSelectedBrands] = useState<string[]>([])
 
   const isRunning = status === "running" || status === "starting"
+  // Distinto de isRunning: la interfaz del reproductor de video no debe
+  // montarse hasta que el backend confirme que el /start salio bien (p.ej.
+  // no hay conflicto de stream ya en uso - ver 409 en api.py). Si se
+  // mostrara ya en "starting", un fallo rapido (409, error de red) hacia
+  // que el carrusel cambiara a video y volviera al carrusel casi al
+  // instante - el parpadeo que se queria evitar.
+  const showPlayer = status === "running"
 
   // Marca si el <video> ya empezo a mostrar imagen en ESTA ejecucion: la
   // cuenta atras de "next capture" no debe empezar a bajar hasta que esto
@@ -124,7 +132,7 @@ export function VehicleBrandDetector() {
           <StreamCarousel
             streams={options.streams}
             streamUrls={options.stream_urls}
-            isRunning={isRunning}
+            isRunning={showPlayer}
             selectedStream={selectedStream}
             onSelectStream={(id) =>
               setSelectedStream((prev) => (prev === id ? "" : id))
@@ -148,6 +156,10 @@ export function VehicleBrandDetector() {
             streamCount={selectedStream ? 1 : 0}
             brandCount={selectedBrands.length}
           />
+
+          {status === "error" && errorMessage && (
+            <p className="text-sm text-destructive">{errorMessage}</p>
+          )}
         </div>
 
         {/* Columna derecha: ocupa todo el alto del dashboard. Contiene dos mini-graficas (recharts)*/}

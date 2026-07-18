@@ -45,6 +45,7 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -67,6 +68,28 @@ log = logging.getLogger("api")
 logging.basicConfig(level=logging.INFO)
 
 JOBS_REGISTRY_FILE = Path("resultados") / "jobs_registry.json"
+
+# -- Arranque escalonado entre streams -----------------------------------------
+# Si 2-3 streams abren su conexion TCP/TLS practicamente al mismo instante
+# (p.ej. varios usuarios arrancando casi a la vez), el origen o la propia
+# red local pueden rechazar alguna de esas conexiones nuevas (visto en
+# pruebas: "Connection to tcp://... failed"). En vez de dejar que cada job
+# abra su conexion apenas arranca su proceso, cada /start reserva un hueco
+# de tiempo secuencial: si ya hay un stream a punto de conectar, este
+# espera lo que haga falta para no coincidir con el.
+STREAM_START_STAGGER_SECONDS = 5.0
+_next_available_start_slot = 0.0
+
+
+def _reserve_start_slot() -> float:
+    """Devuelve cuantos segundos debe esperar este job antes de abrir su
+    conexion al stream. Reserva el siguiente hueco libre de forma
+    secuencial, para que dos /start casi simultaneos no colisionen."""
+    global _next_available_start_slot
+    now = time.monotonic()
+    slot = max(now, _next_available_start_slot)
+    _next_available_start_slot = slot + STREAM_START_STAGGER_SECONDS
+    return max(0.0, slot - now)
 
 
 # -- Persistent job registry (to survive uvicorn restarts) --------------------
@@ -283,6 +306,38 @@ async def poll_queue(job_id: str, queue: "mp.Queue") -> None:
             return
 
 
+# Tope de streams corriendo a la vez: probado empiricamente (ver historial
+# de este archivo) que 2 streams simultaneos son estables, pero un tercero
+# empieza a generar fallos de conexion/contencion de red. En vez de
+# bloquear solo streams duplicados, se bloquea cualquier /start nuevo
+# mientras ya haya MAX_CONCURRENT_STREAMS jobs activos.
+MAX_CONCURRENT_STREAMS = 2
+
+
+def _count_active_jobs() -> int:
+    """Cuenta los jobs realmente vivos ahora mismo: los que estan en
+    memoria mas los que sobrevivieron a un restart de uvicorn y solo
+    constan en el registro persistente (ver _load_registry)."""
+    active_ids = {
+        job_id for job_id, job in jobs.items() if job["process"].is_alive()
+    }
+
+    registry = _load_registry()
+    for job_id, entry in registry.items():
+        if job_id in active_ids:
+            continue
+        pid = entry.get("pid")
+        if pid is None:
+            continue
+        try:
+            if psutil.Process(pid).is_running():
+                active_ids.add(job_id)
+        except psutil.NoSuchProcess:
+            pass
+
+    return len(active_ids)
+
+
 @app.post("/start")
 async def start_detection(payload: StartPayload):
     if payload.stream not in STREAMS_DISPONIBLES:
@@ -291,6 +346,13 @@ async def start_detection(payload: StartPayload):
     marcas_invalidas = set(payload.marcas) - set(MARCAS_DISPONIBLES)
     if marcas_invalidas:
         raise HTTPException(400, f"Unknown brand(s): {marcas_invalidas}")
+
+    if _count_active_jobs() >= MAX_CONCURRENT_STREAMS:
+        raise HTTPException(
+            409,
+            f"Stream '{payload.stream}' is already in use by another user. "
+            "Try a different stream or wait a while.",
+        )
 
     url = STREAMS_DISPONIBLES[payload.stream]
     job_id = str(uuid.uuid4())
@@ -302,9 +364,13 @@ async def start_detection(payload: StartPayload):
     # navegador en llegar a ese primer frame (ver ws_endpoint mas abajo).
     video_ready_queue: "mp.Queue" = mp.Queue()
 
+    # Escalonado: si otro stream esta a punto de abrir su conexion, este
+    # job espera lo necesario para no coincidir (ver _reserve_start_slot).
+    stagger_delay = _reserve_start_slot()
+
     process = mp.Process(
         target=worker,
-        args=(url, payload.marcas, queue, video_ready_queue),
+        args=(url, payload.marcas, queue, video_ready_queue, stagger_delay),
         name=f"job-{job_id}",
         daemon=True,
     )
