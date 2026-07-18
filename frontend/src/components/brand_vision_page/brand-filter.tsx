@@ -21,8 +21,8 @@ export function BrandFilter({
   const allBrandsSelected = brands.length > 0 && selected.length === brands.length
 
   return (
-    <div className="-mt-4 flex flex-col gap-3">
-      <h2 className="text-sm font-medium">Brands to search</h2>
+    <div className="-mt-4 flex flex-col gap-3 4xl:mt-2">
+      <h2 className="text-sm font-medium 4xl:text-base">Brands to search</h2>
       <div
         ref={brandsScrollerRef}
         className="cursor-grab [scrollbar-width:none] overflow-x-auto pb-1 select-none [-ms-overflow-style:none] active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
@@ -76,7 +76,7 @@ export function BrandFilter({
                 : undefined
             }
             className={cn(
-              "shrink-0 rounded-s-full border-2 px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50",
+              "shrink-0 rounded-s-full border-2 px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50 4xl:px-9 4xl:py-5 4xl:text-xl",
               allBrandsSelected
                 ? "border-transparent text-white"
                 : "border-input"
@@ -103,7 +103,7 @@ export function BrandFilter({
                       : undefined
                   }
                   className={cn(
-                    "shrink-0 rounded-s-sm border-2 px-3.5 py-1.5 text-sm capitalize transition-colors",
+                    "shrink-0 rounded-s-sm border-2 px-3.5 py-1.5 text-sm capitalize transition-colors 4xl:px-9 4xl:py-5 4xl:text-xl",
                     active
                       ? "border-transparent text-white"
                       : "data-[state=on]:border-primary"

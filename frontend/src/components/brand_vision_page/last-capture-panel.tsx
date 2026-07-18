@@ -95,7 +95,7 @@ export function LastCapturePanel({ events }: LastCapturePanelProps) {
                             : undefined
                       }
                       alt={d.marca ?? "Detected vehicle"}
-                      className="h-20 w-full object-cover"
+                      className="h-20 w-full object-cover 3xl:h-32 4xl:h-40"
                     />
                     <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-0.5 text-center text-[10px] text-white">
                       <span className="capitalize">{d.marca ?? "—"}</span>
@@ -110,7 +110,7 @@ export function LastCapturePanel({ events }: LastCapturePanelProps) {
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
+        <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground 4xl:min-h-[32rem] 4xl:text-base">
           No detections to show yet.
         </div>
       )}

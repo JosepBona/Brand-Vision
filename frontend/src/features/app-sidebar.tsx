@@ -18,18 +18,30 @@ import { data } from "@/lib/data/sidebar-data"
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar collapsible="icon" {...props}>
+    <Sidebar
+      collapsible="icon"
+      className="4xl:[--sidebar-width:18.67rem]"
+      {...props}
+    >
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<div />}>
-              <Avatar size="lg">
+            <SidebarMenuButton
+              size="lg"
+              render={<div />}
+              className="4xl:h-16 4xl:gap-3 4xl:p-3"
+            >
+              <Avatar size="lg" className="4xl:!size-14">
                 <AvatarImage src={me_logo} alt="BonaDev" />
                 <AvatarFallback>BD</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">BonaDev</span>
-                <span className="truncate text-xs">Portfolio</span>
+                <span className="truncate font-medium 4xl:text-base">
+                  BonaDev
+                </span>
+                <span className="truncate text-xs 4xl:text-sm">
+                  Portfolio
+                </span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>

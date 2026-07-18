@@ -50,14 +50,14 @@ export function TopBrandsRadarChart({ topBrands }: TopBrandsRadarChartProps) {
             "radial-gradient(circle at 100% 0%, var(--chart-2), transparent 60%)",
         }}
       />
-      <p className="relative z-10 text-xs text-muted-foreground">
+      <p className="relative z-10 text-xs text-muted-foreground 3xl:text-sm">
         Top brands
         {isDummy && " · sample"}
       </p>
       {displayBrands.length > 0 ? (
         <ChartContainer
           config={chartConfig}
-          className="relative z-10 mx-auto h-40 w-40"
+          className="relative z-10 mx-auto h-40 w-40 3xl:h-60 3xl:w-60 4xl:h-72 4xl:w-72"
         >
           <RadarChart data={displayBrands}>
             <ChartTooltip

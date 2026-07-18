@@ -1,9 +1,36 @@
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts"
 
 import { Card } from "@/components/ui/card"
 import { brandColor } from "@/components/brand_vision_page/brand-color"
 import type { HighConfidenceChartProps } from "@/types/brand-vision-page"
+
+// ResponsiveContainer solo redimensiona el SVG via ResizeObserver, que no
+// reacciona a los cambios de altura hechos por breakpoints de Tailwind (son
+// CSS puro, no un resize real del contenedor). Se deriva la altura del
+// chart directamente del ancho de ventana para que escale con los mismos
+// cortes 3xl/4xl que el resto del layout.
+function usePieChartHeight() {
+  const [height, setHeight] = useState(() =>
+    typeof window === "undefined"
+      ? 140
+      : window.innerWidth >= 2560
+        ? 260
+        : window.innerWidth >= 1920
+          ? 220
+          : 140
+  )
+  useEffect(() => {
+    const onResize = () => {
+      setHeight(
+        window.innerWidth >= 2560 ? 260 : window.innerWidth >= 1920 ? 220 : 140
+      )
+    }
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
+  }, [])
+  return height
+}
 
 // Datos de muestra: solo se usan cuando todavia no hay ninguna deteccion
 // real (ni de esta sesion ni persistida), para que el chart no se vea
@@ -40,6 +67,7 @@ export function HighConfidenceChart({ matches, topBrands }: HighConfidenceChartP
   }, [matches, topBrands])
 
   const displayBrands = brands.length > 0 ? brands : DUMMY_HIGH_CONFIDENCE_BRANDS
+  const chartHeight = usePieChartHeight()
 
   return (
     <Card className="relative gap-2 overflow-hidden p-3">
@@ -50,18 +78,18 @@ export function HighConfidenceChart({ matches, topBrands }: HighConfidenceChartP
             "radial-gradient(circle at 100% 0%, var(--chart-4), transparent 60%)",
         }}
       />
-      <p className="relative z-10 text-xs text-muted-foreground">
+      <p className="relative z-10 text-xs text-muted-foreground 3xl:text-sm">
         High-confidence brands (&gt;90%)
       </p>
       {displayBrands.length > 0 ? (
-        <ResponsiveContainer className="relative z-10" width="100%" height={140}>
+        <ResponsiveContainer className="relative z-10" width="100%" height={chartHeight}>
           <PieChart>
             <Pie
               data={displayBrands}
               dataKey="count"
               nameKey="marca"
-              innerRadius={32}
-              outerRadius={52}
+              innerRadius="55%"
+              outerRadius="90%"
               paddingAngle={2}
               strokeWidth={0}
               fillOpacity={0.55}

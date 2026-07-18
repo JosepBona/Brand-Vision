@@ -82,7 +82,7 @@ export function StreamCarousel({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1 4xl:mt-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium">Available streams</h2>
         {!isRunning && displayStreams.length > 1 && (
@@ -124,7 +124,7 @@ export function StreamCarousel({
                 key={streamId}
                 className="w-full overflow-hidden rounded-2xl border-[3px] border-border bg-card text-left shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)]"
               >
-                <div className="relative m-1.5 h-80 overflow-hidden rounded-lg bg-muted">
+                <div className="relative m-1.5 h-80 overflow-hidden rounded-lg bg-muted 3xl:h-[28rem] 4xl:h-[42rem]">
                   <StreamPlayer
                     url={streamUrls[streamId]}
                     className="h-full w-full"
@@ -168,7 +168,7 @@ export function StreamCarousel({
                   type="button"
                   onClick={() => selectStream(streamId)}
                   className={cn(
-                    "group relative w-56 shrink-0 overflow-hidden rounded-2xl border-[3px] border-border bg-card text-left shadow-[0_10px_28px_-8px_rgba(0,0,0,0.6)] transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_16px_36px_-8px_rgba(0,0,0,0.7)]",
+                    "group relative w-56 shrink-0 overflow-hidden rounded-2xl border-[3px] border-border bg-card text-left shadow-[0_10px_28px_-8px_rgba(0,0,0,0.6)] transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_16px_36px_-8px_rgba(0,0,0,0.7)] 3xl:w-72 4xl:w-96",
                     isDemo && "cursor-default",
                     // Seleccionado = misma pinta que el hover, pero fija:
                     // escala y sombra del hover se quedan puestas en vez
@@ -191,11 +191,11 @@ export function StreamCarousel({
                   <span
                     className={`border-beam${active ? " border-beam-active" : ""}`}
                   />
-                  <div className="flex items-center gap-2 px-2.5 py-2">
-                    <Cctv className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="text-xs font-medium">{streamId}</span>
+                  <div className="flex items-center gap-2 px-2.5 py-2 3xl:px-3.5 3xl:py-3 4xl:px-4 4xl:py-3.5">
+                    <Cctv className="h-3.5 w-3.5 shrink-0 text-muted-foreground 3xl:h-4.5 3xl:w-4.5 4xl:h-5 4xl:w-5" />
+                    <span className="text-xs font-medium 3xl:text-sm 4xl:text-lg">{streamId}</span>
                   </div>
-                  <div className="relative m-1.5 mt-0 flex h-28 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                  <div className="relative m-1.5 mt-0 flex h-28 items-center justify-center overflow-hidden rounded-lg bg-muted 3xl:h-36 4xl:h-56">
                     {thumbnail ? (
                       <img
                         src={thumbnail}
@@ -203,11 +203,11 @@ export function StreamCarousel({
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <Car className="h-8 w-8 text-muted-foreground" />
+                      <Car className="h-8 w-8 text-muted-foreground 3xl:h-10 3xl:w-10 4xl:h-12 4xl:w-12" />
                     )}
                     <Badge
                       variant="destructive"
-                      className="absolute top-1.5 left-1.5 text-[11px]"
+                      className="absolute top-1.5 left-1.5 text-[11px] 3xl:text-xs 4xl:text-sm"
                     >
                       Live
                     </Badge>

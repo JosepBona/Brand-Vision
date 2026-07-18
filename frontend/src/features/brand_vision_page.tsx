@@ -125,7 +125,7 @@ export function VehicleBrandDetector() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-[1.5rem] pb-12 xl:max-w-7xl 2xl:max-w-[100rem]">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-[1.5rem] pb-12 4xl:px-[3.5rem] xl:max-w-7xl 2xl:max-w-[100rem] 3xl:max-w-[130rem] 4xl:max-w-[160rem]">
       {backendStatus === "offline" && (
         <Alert className="border-sky-500/40 bg-sky-500/15 text-sky-100">
           <WifiOff className="h-4 w-4" />
@@ -137,7 +137,7 @@ export function VehicleBrandDetector() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_15.625rem]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_15.625rem] 3xl:grid-cols-[1fr_17.33rem] 4xl:grid-cols-[1fr_21.33rem]">
         {/* Columna izquierda: hero + streams + marcas + accion */}
         <div className="flex min-w-0 flex-col gap-5">
           <HeroBrandVision brandStats={brandStats} />
@@ -178,7 +178,7 @@ export function VehicleBrandDetector() {
         </div>
 
         {/* Columna derecha: ocupa todo el alto del dashboard. Contiene dos mini-graficas (recharts)*/}
-        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3">
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 3xl:gap-5 3xl:p-5">
           <HighConfidenceChart matches={matches} topBrands={brandStats.top} />
           <TopBrandsRadarChart topBrands={brandStats.top} />
 

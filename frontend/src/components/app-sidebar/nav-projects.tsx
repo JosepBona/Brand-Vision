@@ -12,12 +12,13 @@ import type { NavProjectsProps } from "@/types/app-sidebar"
 export function NavProjects({ label, projects }: NavProjectsProps) {
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>{label}</SidebarGroupLabel>
-      <SidebarMenu>
+      <SidebarGroupLabel className="4xl:text-sm">{label}</SidebarGroupLabel>
+      <SidebarMenu className="4xl:gap-1.5">
         {projects.map((item) => (
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton
               tooltip={item.name}
+              className="4xl:h-11 4xl:gap-3 4xl:px-3 4xl:text-base 4xl:[&>svg]:size-5"
               render={
                 <a
                   href={item.url}
