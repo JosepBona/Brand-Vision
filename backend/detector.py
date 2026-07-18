@@ -1,3 +1,4 @@
+import base64
 import contextlib
 import logging
 import multiprocessing
@@ -7,6 +8,7 @@ import time
 from datetime import datetime
 from multiprocessing import Process
 from pathlib import Path
+from queue import Empty
 
 if multiprocessing.current_process().name != "MainProcess":
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -18,16 +20,21 @@ from skimage.metrics import structural_similarity as ssim
 import stats_db
 
 DEFAULT_INTERVAL    = 10
-STARTUP_DELAY_SECONDS = 7
+# Tope de espera a que el frontend confirme que el <video> HLS ya esta
+# reproduciendo antes de disparar la primera captura. Si la señal nunca
+# llega (cliente cerrado, error de red en el WS, etc.) no nos quedamos
+# esperando para siempre: arrancamos igual pasado este tiempo.
+VIDEO_READY_TIMEOUT_SECONDS = 20
+# Margen extra sobre los ms de carga reportados por el frontend: cubre el
+# hueco entre "el <video> ya pinta el primer frame" y "el segmento HLS que
+# se ve en pantalla ya esta realmente estable/actualizado".
+EXTRA_VIDEO_SYNC_DELAY_SECONDS = 1.5
 DEFAULT_CONF        = 0.25
-DEFAULT_OUTPUT      = "resultados"
-DEFAULT_DETECTED    = "detectados"
 DEFAULT_DET_MODEL   = "yolo26n.pt"
 DEFAULT_CLS_MARCA   = "best.pt"
 IMAGE_FORMAT_FRAME  = ".jpg"
 IMAGE_FORMAT_CROP   = ".png"
 JPEG_QUALITY        = 90
-LATEST_FRAME_FILENAME = "latest_frame.jpg"
 MIN_CROP_SIZE       = 224
 # SSIM threshold for crop dedup: lower than a full-frame dedup threshold
 # because YOLO's bounding box is never pixel-perfect between two
@@ -258,35 +265,27 @@ def matches_any_marca(pred_marca: str, conf_marca: float,
     return False, ""
 
 
+# -- Image encoding (todas las imagenes viajan por WebSocket, ninguna se
+#    guarda en disco) -------------------------------------------------------
+
+def _encode_image(img: np.ndarray, fmt: str) -> str | None:
+    """Codifica una imagen a base64 para mandarla directo en un evento por
+    WebSocket, sin pasar por disco."""
+    ok, buf = cv2.imencode(fmt, img)
+    return base64.b64encode(buf).decode("ascii") if ok else None
+
+
 # -- Latest frame (to show the current capture, whether or not it has vehicles) --
 
-def save_latest_frame(frame: np.ndarray, output: Path) -> str:
-    """Always overwrites the same file (not one per capture) to avoid
-    filling up disk with photos of an empty road; the frontend uses the
-    frame number as a cache-buster in the URL."""
-    path = output / LATEST_FRAME_FILENAME
-    cv2.imwrite(str(path), frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-    return LATEST_FRAME_FILENAME
+def save_latest_frame(frame: np.ndarray) -> str | None:
+    return _encode_image(frame, IMAGE_FORMAT_FRAME)
 
 
 # -- Match saving --------------------------------------------------------------
 
 def save_match(frame: np.ndarray, crop: np.ndarray, marca: str,
-               marca_conf: float, output: Path, url: str, queue=None) -> None:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-    match_dir = output / timestamp
-    match_dir.mkdir(parents=True, exist_ok=True)
-
-    frame_path = match_dir / f"frame_{timestamp}{IMAGE_FORMAT_FRAME}"
-    crop_path  = match_dir / f"{marca}_{timestamp}{IMAGE_FORMAT_CROP}"
-
-    cv2.imwrite(str(frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-    cv2.imwrite(str(crop_path),  crop)
-
-    log.info(
-        "MATCH ENCONTRADO | marca: %s (%.2f) | stream: %s | guardado en: %s",
-        marca, marca_conf, url, match_dir
-    )
+               marca_conf: float, url: str, queue=None) -> None:
+    log.info("MATCH ENCONTRADO | marca: %s (%.2f) | stream: %s", marca, marca_conf, url)
 
     stats_db.increment_brand(marca)
 
@@ -295,44 +294,39 @@ def save_match(frame: np.ndarray, crop: np.ndarray, marca: str,
         marca=marca,
         confianza=round(marca_conf, 4),
         stream=url,
-        frame_path=str(frame_path.relative_to(output)),
-        crop_path=str(crop_path.relative_to(output)),
+        frame_data=_encode_image(frame, IMAGE_FORMAT_FRAME),
+        crop_data=_encode_image(crop, IMAGE_FORMAT_CROP),
     )
 
 
 # -- Detected saving -----------------------------------------------------------
 
-def save_detected(crop: np.ndarray, marca: str,
-                  marca_conf: float, detected_dir: Path, queue=None) -> str:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-    filename  = f"{marca}_{timestamp}{IMAGE_FORMAT_CROP}"
-    cv2.imwrite(str(detected_dir / filename), crop)
-
+def save_detected(crop: np.ndarray, marca: str, marca_conf: float, queue=None) -> None:
     emit(
         queue, "detected",
         marca=marca,
         confianza=round(marca_conf, 4),
-        filename=filename,
+        image_data=_encode_image(crop, IMAGE_FORMAT_CROP),
     )
-    return filename
 
 
-def save_discarded(crop: np.ndarray, reason: str,
-                   detected_dir: Path, queue=None) -> str:
-    """Saves a crop discarded before classification (e.g. for blurriness)
-    in the same folder as 'detected', so the frontend can still show it
-    even though no brand was ever predicted."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-    filename  = f"{reason}_{timestamp}{IMAGE_FORMAT_CROP}"
-    cv2.imwrite(str(detected_dir / filename), crop)
+def save_discarded(crop: np.ndarray, reason: str, queue=None) -> None:
+    """Descarte antes de clasificar (borroso o duplicado): NO se guarda en
+    disco (con muchos vehiculos por frame, esto llenaba detectados/ de
+    archivos rapidamente y generaba mucho trafico HTTP hacia el frontend
+    para crops que no aportan valor persistido). En cambio, el recorte
+    viaja directo en el evento por WebSocket, codificado en base64, para
+    que el frontend lo siga mostrando en vivo sin necesitar un archivo
+    servido por HTTP."""
+    ok, buf = cv2.imencode(IMAGE_FORMAT_CROP, crop)
+    image_data = base64.b64encode(buf).decode("ascii") if ok else None
 
     emit(
         queue, "detected",
         marca=reason,
         descartado=reason,
-        filename=filename,
+        image_data=image_data,
     )
-    return filename
 
 
 # -- Interactive prompt --------------------------------------------------------
@@ -379,7 +373,7 @@ def stream_label(url: str) -> str:
 
 
 def run(url: str, marcas: list[str], det_model, cls_marca_model,
-        output_dir: Path, detected_dir: Path, queue=None) -> None:
+        queue=None, video_ready_queue=None) -> None:
 
     # Memory of recent crops (not just the last frame): each entry is
     # {"prepared": grayscale+resized crop, "last_seen": timestamp}. A
@@ -402,8 +396,22 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
 
     emit(queue, "started", stream=label, marcas=marcas)
 
-    # Fixed startup delay, once only, not on every capture cycle.
-    time.sleep(STARTUP_DELAY_SECONDS)
+    # Espera a que el frontend confirme (via WebSocket) que el <video> HLS
+    # ya esta reproduciendo, para que la primera captura no ocurra antes de
+    # que haya nada visible en pantalla. Si no llega a tiempo, arrancamos
+    # igual: es mejor una captura desincronizada que un job que nunca hace
+    # nada. El mensaje trae ademas los ms que tardo el navegador en pintar
+    # ese primer frame (medidos en StreamPlayer): se suman aqui como delay
+    # extra, para que la primera captura no ocurra justo en el instante en
+    # que arranca el <video> sino tras el mismo margen que tardo en cargar.
+    if video_ready_queue is not None:
+        emit(queue, "waiting_for_video", stream=label)
+        try:
+            load_ms = video_ready_queue.get(timeout=VIDEO_READY_TIMEOUT_SECONDS)
+        except Empty:
+            load_ms = 0
+        if load_ms:
+            time.sleep(load_ms / 1000 + EXTRA_VIDEO_SYNC_DELAY_SECONDS)
 
     try:
         while True:
@@ -425,7 +433,7 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
             consecutive_failures = 0
             total_frames        += 1
 
-            latest_frame_path = save_latest_frame(frame, output_dir)
+            latest_frame_data = save_latest_frame(frame)
             boxes = detect_vehicles(frame, det_model, DEFAULT_CONF)
 
             if not boxes:
@@ -433,13 +441,13 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
                             label, total_frames, total_matches)
                 emit(queue, "status", stream=label, frame=total_frames,
                      detalle="sin_vehiculos", matches=total_matches,
-                     frame_path=latest_frame_path)
+                     frame_data=latest_frame_data)
             else:
                 status.info("[%s] Frame %d | %d vehiculo(s) en frame, clasificando... | matches: %d",
                             label, total_frames, len(boxes), total_matches)
                 emit(queue, "status", stream=label, frame=total_frames,
                      detalle="clasificando", vehiculos=len(boxes), matches=total_matches,
-                     frame_path=latest_frame_path)
+                     frame_data=latest_frame_data)
 
             for box in boxes:
                 crop = get_crop(frame, box)
@@ -451,7 +459,7 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
                 if not is_sharp(crop, DEFAULT_MIN_SHARPNESS):
                     status.info("[%s] Frame %d | vehiculo descartado (borroso, varianza < %.1f)",
                                 label, total_frames, DEFAULT_MIN_SHARPNESS)
-                    save_discarded(crop, "blurry", detected_dir, queue=queue)
+                    save_discarded(crop, "blurry", queue=queue)
                     continue
 
                 # Deduplication on the vehicle crop (not the full frame):
@@ -479,7 +487,7 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
                     known_crops[match_idx]["last_seen"] = time.time()
                     status.info("[%s] Frame %d | vehiculo descartado (recorte duplicado, %s %.3f)",
                                 label, total_frames, reason, score)
-                    save_discarded(crop, "duplicate", detected_dir, queue=queue)
+                    save_discarded(crop, "duplicate", queue=queue)
                     continue
 
                 known_crops.append({"prepared": crop_prepared, "box": box_xyxy, "last_seen": time.time()})
@@ -489,10 +497,10 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
                 matched, marca = matches_any_marca(pred_marca, conf_marca, marcas)
                 if matched:
                     total_matches += 1
-                    save_match(frame, crop, marca, conf_marca, output_dir, url, queue=queue)
+                    save_match(frame, crop, marca, conf_marca, url, queue=queue)
                 else:
-                    filename = save_detected(crop, pred_marca, conf_marca, detected_dir, queue=queue)
-                    log.info("Detectado: %s (%.2f) | archivo: %s", pred_marca, conf_marca, filename)
+                    save_detected(crop, pred_marca, conf_marca, queue=queue)
+                    log.info("Detectado: %s (%.2f)", pred_marca, conf_marca)
 
             # Forget crops that have gone too long without reappearing, so
             # we don't compare against an ever-growing history.
@@ -514,11 +522,9 @@ def run(url: str, marcas: list[str], det_model, cls_marca_model,
 
 # -- Worker (subprocess) --------------------------------------------------------
 
-def worker(url: str, marcas: list[str], queue=None) -> None:
-    output_dir   = Path(DEFAULT_OUTPUT)
-    detected_dir = Path(DEFAULT_DETECTED)
+def worker(url: str, marcas: list[str], queue=None, video_ready_queue=None) -> None:
+    output_dir = Path("resultados")
     output_dir.mkdir(parents=True, exist_ok=True)
-    detected_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(output_dir / "search.log")
 
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
@@ -535,7 +541,8 @@ def worker(url: str, marcas: list[str], queue=None) -> None:
         emit(queue, "error", message=f"Error cargando modelos: {exc}")
         raise
 
-    run(url, marcas, det_model, cls_marca_model, output_dir, detected_dir, queue=queue)
+    run(url, marcas, det_model, cls_marca_model, queue=queue,
+        video_ready_queue=video_ready_queue)
 
 
 # -- Entry point (manual use from the terminal) ---------------------------------
@@ -549,10 +556,8 @@ if __name__ == "__main__":
         "|user_agent;Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     )
 
-    output_dir   = Path(DEFAULT_OUTPUT)
-    detected_dir = Path(DEFAULT_DETECTED)
+    output_dir = Path("resultados")
     output_dir.mkdir(parents=True, exist_ok=True)
-    detected_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(output_dir / "search.log")
     stats_db.init_db()
 
@@ -562,7 +567,7 @@ if __name__ == "__main__":
     if len(urls) == 1:
         det_model       = load_model(DEFAULT_DET_MODEL)
         cls_marca_model = load_model(DEFAULT_CLS_MARCA)
-        run(urls[0], marcas, det_model, cls_marca_model, output_dir, detected_dir)
+        run(urls[0], marcas, det_model, cls_marca_model)
     else:
         processes = [
             Process(target=worker, args=(url, marcas), name=f"stream-{i+1}")

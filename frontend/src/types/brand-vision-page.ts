@@ -27,7 +27,7 @@ export interface StreamCarouselProps {
   selectedStream: string
   onSelectStream: (id: string) => void
   secondsToNextCapture: number
-  onFirstFrame: () => void
+  onFirstFrame: (ms: number) => void
 }
 
 export interface BrandFilterProps {
@@ -57,8 +57,6 @@ export interface TopBrandsRadarChartProps {
 
 export interface LastCapturePanelProps {
   events: DetectionEvent[]
-  mediaUrl: (relativePath: string) => string
-  detectedMediaUrl: (filename: string) => string
 }
 
 export interface CaptureImageProps {
@@ -68,7 +66,6 @@ export interface CaptureImageProps {
 
 export interface DetectionHistoryTableProps {
   matches: DetectionEvent[]
-  mediaUrl: (relativePath: string) => string
 }
 
 export interface ImageWithDownloadProps {

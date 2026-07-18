@@ -53,14 +53,11 @@ from typing import Dict, Optional
 import psutil
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import stats_db
 from detector import (
-    DEFAULT_DETECTED,
     DEFAULT_INTERVAL,
-    DEFAULT_OUTPUT,
     MARCAS_DISPONIBLES,
     STREAMS_DISPONIBLES,
     worker,
@@ -69,7 +66,7 @@ from detector import (
 log = logging.getLogger("api")
 logging.basicConfig(level=logging.INFO)
 
-JOBS_REGISTRY_FILE = Path(DEFAULT_OUTPUT) / "jobs_registry.json"
+JOBS_REGISTRY_FILE = Path("resultados") / "jobs_registry.json"
 
 
 # -- Persistent job registry (to survive uvicorn restarts) --------------------
@@ -186,21 +183,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Make sure these exist before mounting them; otherwise StaticFiles raises
-# RuntimeError on uvicorn startup (e.g. the very first run, before any
-# detection job has been started).
-Path(DEFAULT_OUTPUT).mkdir(parents=True, exist_ok=True)
-Path(DEFAULT_DETECTED).mkdir(parents=True, exist_ok=True)
-
-# Serves the saved images (frame + crop for each match) so React can
-# display them: http://localhost:8000/media/<timestamp>/frame_...jpg
-app.mount("/media", StaticFiles(directory=DEFAULT_OUTPUT), name="media")
-
-# Crops of classified vehicles that did NOT become a "match" (brand not
-# searched for, or confidence below MIN_CONF_MARCA): kept in a separate
-# folder (DEFAULT_DETECTED), mounted separately so the frontend can show
-# them in the "Detected crops" section.
-app.mount("/detected_media", StaticFiles(directory=DEFAULT_DETECTED), name="detected_media")
+# Used for search.log, jobs_registry.json and stats.db - no images are
+# saved to disk anymore (frames/crops travel base64-encoded inside the
+# WebSocket events themselves, see detector.py), so there's nothing left
+# to mount/serve as static files here.
+Path("resultados").mkdir(parents=True, exist_ok=True)
 
 jobs: Dict[str, dict] = {}
 # job_id -> {"process", "queue", "sockets", "poller_task", "stream", "marcas"}
@@ -308,10 +295,16 @@ async def start_detection(payload: StartPayload):
     url = STREAMS_DISPONIBLES[payload.stream]
     job_id = str(uuid.uuid4())
     queue: "mp.Queue" = mp.Queue()
+    # Canal cross-proceso: el detector (en su propio Process) espera un
+    # mensaje aqui antes de disparar la primera captura, sincronizandola
+    # con el momento en que el <video> HLS del frontend realmente empieza
+    # a reproducir. El valor puesto en la queue son los ms que tardo el
+    # navegador en llegar a ese primer frame (ver ws_endpoint mas abajo).
+    video_ready_queue: "mp.Queue" = mp.Queue()
 
     process = mp.Process(
         target=worker,
-        args=(url, payload.marcas, queue),
+        args=(url, payload.marcas, queue, video_ready_queue),
         name=f"job-{job_id}",
         daemon=True,
     )
@@ -326,6 +319,7 @@ async def start_detection(payload: StartPayload):
         "poller_task": poller_task,
         "stream": payload.stream,
         "marcas": payload.marcas,
+        "video_ready_queue": video_ready_queue,
     }
 
     # Persist the PID to disk: if uvicorn restarts while this job is still
@@ -408,8 +402,19 @@ async def ws_endpoint(websocket: WebSocket, job_id: str):
     job["sockets"].append(websocket)
     try:
         while True:
-            # only keeping the connection alive / detecting disconnects
-            await websocket.receive_text()
+            # Ademas de mantener viva la conexion / detectar desconexiones,
+            # el frontend manda {"type": "video_ready", "load_ms": N} en
+            # cuanto el <video> HLS empieza a reproducir (evento
+            # "playing"), lo que desbloquea la espera del detector antes
+            # de su primera captura y le pasa los ms de carga medidos.
+            message = await websocket.receive_text()
+            try:
+                data = json.loads(message)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(data, dict) and data.get("type") == "video_ready":
+                load_ms = data.get("load_ms") or 0
+                job["video_ready_queue"].put(load_ms)
     except WebSocketDisconnect:
         if websocket in job["sockets"]:
             job["sockets"].remove(websocket)

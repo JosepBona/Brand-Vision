@@ -19,9 +19,8 @@ export function VehicleBrandDetector() {
     status,
     events,
     matches,
-    mediaUrl,
-    detectedMediaUrl,
     persistedBrandCounts,
+    notifyVideoReady,
   } = useVehicleDetection()
 
   // El backend solo soporta UN stream por job (/start recibe "stream", no
@@ -36,8 +35,9 @@ export function VehicleBrandDetector() {
   // sea true (ver el efecto de mas abajo), asi que arranca en false y se
   // resetea cada vez que se detiene la deteccion.
   const [videoStarted, setVideoStarted] = useState(false)
-  const handleStreamFirstFrame = () => {
+  const handleStreamFirstFrame = (ms: number) => {
     setVideoStarted(true)
+    notifyVideoReady(ms)
   }
 
   // Cuenta atras hasta la proxima captura del backend: se reinicia cada vez
@@ -115,7 +115,7 @@ export function VehicleBrandDetector() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-12 xl:max-w-7xl 2xl:max-w-[100rem]">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-[1.5rem] pb-12 xl:max-w-7xl 2xl:max-w-[100rem]">
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_15.625rem]">
         {/* Columna izquierda: hero + streams + marcas + accion */}
         <div className="flex min-w-0 flex-col gap-5">
@@ -157,15 +157,11 @@ export function VehicleBrandDetector() {
 
           {/* Ultima captura del backend, debajo de la barra lateral,
               ocupando el resto del alto disponible. */}
-          <LastCapturePanel
-            events={events}
-            mediaUrl={mediaUrl}
-            detectedMediaUrl={detectedMediaUrl}
-          />
+          <LastCapturePanel events={events} />
         </div>
       </div>
 
-      <DetectionHistoryTable matches={matches} mediaUrl={mediaUrl} />
+      <DetectionHistoryTable matches={matches} />
     </div>
   )
 }

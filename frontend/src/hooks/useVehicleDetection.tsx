@@ -22,11 +22,13 @@ export interface DetectionEvent {
   marca?: string;
   confianza?: number;
   timestamp?: string;
-  frame_path?: string;
-  crop_path?: string;
   message?: string;
   frame?: number;
-  filename?: string;
+  // Todas las imagenes viajan codificadas en base64 directo en el evento
+  // (nunca como ruta a un archivo servido por HTTP) - ver detector.py.
+  frame_data?: string;
+  crop_data?: string;
+  image_data?: string;
   [key: string]: unknown;
 }
 
@@ -137,6 +139,21 @@ export function useVehicleDetection() {
     []
   );
 
+  // Llamado cuando el <video> HLS del frontend realmente empieza a
+  // reproducir (evento nativo "playing" en StreamPlayer): le avisa al
+  // backend por el mismo WebSocket para que la primera captura del
+  // detector espere a este momento en vez de dispararse a ciegas apenas
+  // arranca el proceso. `loadMs` es lo que tardo el navegador en llegar a
+  // ese primer frame (medido en StreamPlayer): el backend lo suma como
+  // delay extra antes de capturar, para compensar el tiempo en que el
+  // usuario todavia no vio nada en pantalla (ver video_ready_queue en
+  // api.py/detector.py).
+  const notifyVideoReady = useCallback((loadMs: number) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "video_ready", load_ms: loadMs }));
+    }
+  }, []);
+
   const stop = useCallback(async () => {
     if (jobId) {
       await fetch(`${API_BASE}/stop`, {
@@ -151,10 +168,6 @@ export function useVehicleDetection() {
   }, [jobId]);
 
   const matches = events.filter((e) => e.type === "match");
-  const mediaUrl = (relativePath: string) =>
-    `${API_BASE}/media/${relativePath}`;
-  const detectedMediaUrl = (filename: string) =>
-    `${API_BASE}/detected_media/${filename}`;
 
   return {
     options,
@@ -164,79 +177,7 @@ export function useVehicleDetection() {
     events,
     matches,
     jobId,
-    mediaUrl,
-    detectedMediaUrl,
     persistedBrandCounts,
+    notifyVideoReady,
   };
-}
-
-/**
- * Ejemplo de componente de dashboard usando el hook de arriba.
- * Ajusta clases/estilos a tu UI actual.
- */
-export function VehicleDetectionPanel() {
-  const { options, start, stop, status, matches, mediaUrl } =
-    useVehicleDetection();
-  const [stream, setStream] = useState<string>("");
-  const [marcas, setMarcas] = useState<string[]>([]);
-
-  const toggleMarca = (marca: string) => {
-    setMarcas((prev) =>
-      prev.includes(marca) ? prev.filter((m) => m !== marca) : [...prev, marca]
-    );
-  };
-
-  return (
-    <div>
-      <select value={stream} onChange={(e) => setStream(e.target.value)}>
-        <option value="">Selecciona un stream</option>
-        {options.streams.map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
-
-      <div>
-        {options.marcas.map((m) => (
-          <label key={m}>
-            <input
-              type="checkbox"
-              checked={marcas.includes(m)}
-              onChange={() => toggleMarca(m)}
-            />
-            {m}
-          </label>
-        ))}
-      </div>
-
-      {status === "running" ? (
-        <button onClick={stop}>Detener</button>
-      ) : (
-        <button
-          disabled={!stream || marcas.length === 0}
-          onClick={() => start(stream, marcas)}
-        >
-          Iniciar deteccion
-        </button>
-      )}
-
-      <p>Estado: {status}</p>
-
-      <ul>
-        {matches.map((m, i) => (
-          <li key={i}>
-            <strong>{m.marca}</strong> ({((m.confianza ?? 0) * 100).toFixed(0)}
-            %) — {m.timestamp}
-            <br />
-            <img
-              src={mediaUrl(m.crop_path ?? "")}
-              alt={m.marca}
-              width={150}
-            />
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
 }

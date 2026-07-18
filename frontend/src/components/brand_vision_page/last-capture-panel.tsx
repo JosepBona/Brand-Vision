@@ -34,15 +34,11 @@ function CaptureImage({ src, alt }: CaptureImageProps) {
   )
 }
 
-export function LastCapturePanel({
-  events,
-  mediaUrl,
-  detectedMediaUrl,
-}: LastCapturePanelProps) {
+export function LastCapturePanel({ events }: LastCapturePanelProps) {
   // Captura mas reciente enviada por el backend, tenga o no vehiculos: a
   // diferencia de lastMatch (solo eventos "match"), esto mira cualquier
-  // evento con frame_path (incluye los "status" de cada ciclo de captura).
-  const latestCapture = events.find((e) => e.frame_path)
+  // evento con frame_data (incluye los "status" de cada ciclo de captura).
+  const latestCapture = events.find((e) => e.frame_data)
 
   // TODOS los vehiculos recortados (match + detected) del ultimo ciclo de
   // captura: los eventos van del mas nuevo al mas viejo, y cada ciclo
@@ -60,14 +56,14 @@ export function LastCapturePanel({
 
   return (
     <div className="flex flex-1 flex-col gap-3">
-      {latestCapture?.frame_path ? (
+      {latestCapture?.frame_data ? (
         <div className="overflow-hidden rounded-lg border bg-background">
           <p className="border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">
             Last capture
           </p>
           <CaptureImage
             key={latestCapture.frame}
-            src={`${mediaUrl(latestCapture.frame_path)}?f=${latestCapture.frame ?? ""}`}
+            src={`data:image/jpeg;base64,${latestCapture.frame_data}`}
             alt="Ultima captura del stream"
           />
 
@@ -91,11 +87,11 @@ export function LastCapturePanel({
                     <img
                       src={
                         d.type === "match"
-                          ? d.crop_path
-                            ? mediaUrl(d.crop_path)
+                          ? d.crop_data
+                            ? `data:image/png;base64,${d.crop_data}`
                             : undefined
-                          : d.filename
-                            ? detectedMediaUrl(d.filename)
+                          : d.image_data
+                            ? `data:image/png;base64,${d.image_data}`
                             : undefined
                       }
                       alt={d.marca ?? "Detected vehicle"}

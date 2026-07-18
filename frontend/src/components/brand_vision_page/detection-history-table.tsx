@@ -30,29 +30,10 @@ function formatDate(timestamp?: string) {
   })
 }
 
-function filenameFromPath(path: string) {
-  return path.split("/").pop() || path
-}
-
-// Forzamos la descarga via blob en vez de <a download> plano porque
-// frontend y backend son origenes distintos (puertos): el atributo
-// "download" del navegador solo fuerza el guardado para recursos del mismo
-// origen, en cross-origin simplemente abriria/navegaria a la imagen.
-async function downloadImage(url: string, filename: string) {
-  try {
-    const res = await fetch(url)
-    const blob = await res.blob()
-    const objectUrl = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = objectUrl
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(objectUrl)
-  } catch {
-    // descarga best-effort: si falla no debe romper la tabla
-  }
+function safeFilename(marca: string | undefined, timestamp: string | undefined, ext: string) {
+  const label = marca ?? "vehicle"
+  const ts = (timestamp ?? "").replace(/[:.]/g, "-")
+  return `${label}_${ts}${ext}`
 }
 
 function ImageWithDownload({
@@ -64,22 +45,24 @@ function ImageWithDownload({
   return (
     <div className="group relative mx-auto inline-block">
       <img src={src} alt={alt} className={className} />
-      <button
-        type="button"
-        onClick={() => downloadImage(src, filename)}
+      {/* src es un data URI (mismo origen por definicion, no un recurso
+          servido por HTTP en otro puerto), asi que el atributo "download"
+          nativo funciona directo - ya no hace falta el workaround de
+          fetch+blob que se necesitaba antes para forzar la descarga
+          cross-origin. */}
+      <a
+        href={src}
+        download={filename}
         aria-label={`Download ${alt}`}
         className="absolute right-1 bottom-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/80"
       >
         <DownloadIcon className="h-3.5 w-3.5" />
-      </button>
+      </a>
     </div>
   )
 }
 
-export function DetectionHistoryTable({
-  matches,
-  mediaUrl,
-}: DetectionHistoryTableProps) {
+export function DetectionHistoryTable({ matches }: DetectionHistoryTableProps) {
   const [historyPage, setHistoryPage] = useState(0)
 
   const historyPageCount = Math.max(
@@ -131,11 +114,11 @@ export function DetectionHistoryTable({
                     {formatDate(match.timestamp)}
                   </TableCell>
                   <TableCell className="text-center">
-                    {match.frame_path ? (
+                    {match.frame_data ? (
                       <ImageWithDownload
-                        src={mediaUrl(match.frame_path)}
+                        src={`data:image/jpeg;base64,${match.frame_data}`}
                         alt="Original frame"
-                        filename={filenameFromPath(match.frame_path)}
+                        filename={safeFilename(match.marca, match.timestamp, ".jpg")}
                         className="mx-auto h-24 w-36 rounded bg-muted object-contain"
                       />
                     ) : (
@@ -143,11 +126,11 @@ export function DetectionHistoryTable({
                     )}
                   </TableCell>
                   <TableCell className="text-center">
-                    {match.crop_path ? (
+                    {match.crop_data ? (
                       <ImageWithDownload
-                        src={mediaUrl(match.crop_path)}
+                        src={`data:image/png;base64,${match.crop_data}`}
                         alt="Cropped vehicle"
-                        filename={filenameFromPath(match.crop_path)}
+                        filename={safeFilename(match.marca, match.timestamp, ".png")}
                         className="mx-auto h-24 w-36 rounded bg-muted object-contain"
                       />
                     ) : (
