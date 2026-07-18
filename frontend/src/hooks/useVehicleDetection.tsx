@@ -25,11 +25,11 @@ const FALLBACK_OPTIONS: DetectionOptions = {
   // verdad): solo hacen falta los nombres para que el carrusel y el
   // selector de marcas se vean completos. "test-recording" es la
   // excepcion - es un archivo estatico servido por el propio frontend
-  // (frontend/public/test-recording-v2.mp4), asi que sigue funcionando
+  // (frontend/public/test-recording-v5.mp4), asi que sigue funcionando
   // aunque el backend este caido.
   stream_urls: {
     ...Object.fromEntries(FALLBACK_STREAMS.map((s) => [s, ""])),
-    "test-recording": "/test-recording-v2.mp4",
+    "test-recording": "/test-recording-v5.mp4",
   },
   marcas: FALLBACK_MARCAS,
   capture_interval: 10,

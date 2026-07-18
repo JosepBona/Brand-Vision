@@ -48,11 +48,11 @@ STREAMS_DISPONIBLES = {
     "Nevada-1": "https://d2wse2.its.nv.gov/renoxcd02/eaf6f95b-3055-4e9c-8def-845ac6d0aa75_hspflirxcd02_public.stream/playlist.m3u8",
     "Nevada-2": "https://d1wse3.its.nv.gov/vegasxcd03/c28c7806-930c-45ed-a698-e578390b9d38_lvflirxcd03_public.stream/playlist.m3u8",
     "Nevada-3": "https://d1wse1.its.nv.gov/vegasxcd01/e2095a9e-bdc1-4dd2-95ba-bdf4bdb11f6e_lvflirxcd01_eoc.stream/playlist.m3u8",
-    # Grabacion local de prueba (frontend/public/test-recording-v2.mp4):
+    # Grabacion local de prueba (frontend/public/test-recording-v5.mp4):
     # el backend nunca la toca (ya no se conecta el mismo a ningun stream
     # - ver historial), esta URL es solo la que usa el frontend para
     # cargarla en el <video>.
-    "test-recording": "/test-recording-v2.mp4",
+    "test-recording": "/test-recording-v5.mp4",
     "Nevada-4": "https://d3wse1.its.nv.gov/elkoxcd01/a3924004-7af8-4bf6-a6c2-ff8838c92ada_hspflirxcd04_public.stream/playlist.m3u8",
 }
 
