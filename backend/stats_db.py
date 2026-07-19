@@ -28,25 +28,31 @@ def init_db() -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS brand_counts (
-                marca TEXT PRIMARY KEY,
+                brand TEXT PRIMARY KEY,
                 count INTEGER NOT NULL DEFAULT 0
             )
             """
         )
+        # Migration: the table used to have a "marca" column (Spanish).
+        # Rename it in place instead of dropping the table, so existing
+        # persisted counts survive the English rename.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(brand_counts)")}
+        if "marca" in columns and "brand" not in columns:
+            conn.execute("ALTER TABLE brand_counts RENAME COLUMN marca TO brand")
         conn.commit()
     finally:
         conn.close()
 
 
-def increment_brand(marca: str) -> None:
+def increment_brand(brand: str) -> None:
     conn = _connect()
     try:
         conn.execute(
             """
-            INSERT INTO brand_counts (marca, count) VALUES (?, 1)
-            ON CONFLICT(marca) DO UPDATE SET count = count + 1
+            INSERT INTO brand_counts (brand, count) VALUES (?, 1)
+            ON CONFLICT(brand) DO UPDATE SET count = count + 1
             """,
-            (marca,),
+            (brand,),
         )
         conn.commit()
     finally:
@@ -56,7 +62,7 @@ def increment_brand(marca: str) -> None:
 def get_all_counts() -> dict[str, int]:
     conn = _connect()
     try:
-        rows = conn.execute("SELECT marca, count FROM brand_counts").fetchall()
-        return {marca: count for marca, count in rows}
+        rows = conn.execute("SELECT brand, count FROM brand_counts").fetchall()
+        return {brand: count for brand, count in rows}
     finally:
         conn.close()

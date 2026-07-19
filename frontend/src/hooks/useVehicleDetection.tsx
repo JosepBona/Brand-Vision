@@ -3,35 +3,34 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000";
 
-// Cuanto esperar a que /options responda antes de avisar que el backend
-// esta caido (ver backendStatus). Los datos de muestra NO dependen de
-// este timeout - se cargan siempre desde el primer render (ver
-// FALLBACK_OPTIONS/FALLBACK_BRAND_COUNTS mas abajo), independientemente
-// de si el backend responde o no: son responsabilidades separadas.
+// How long to wait for /options to respond before flagging the backend
+// as down (see backendStatus). The sample data does NOT depend on this
+// timeout - it's always loaded from the first render (see
+// FALLBACK_OPTIONS/FALLBACK_BRAND_COUNTS below), regardless of whether
+// the backend responds or not: they're separate responsibilities.
 const BACKEND_DOWN_ALERT_MS = 2000;
 
-// Reflejan los valores reales de detector.py (STREAMS_DISPONIBLES /
-// MARCAS_DISPONIBLES): solo se usan si el backend no responde a tiempo,
-// para que la interfaz se vea igual de poblada que con el backend
-// arriba, en vez de mostrar listas vacias.
+// Mirror the real values from detector.py (STREAMS_DISPONIBLES /
+// AVAILABLE_BRANDS): only used if the backend doesn't respond in time,
+// so the UI looks just as populated as with the backend up, instead of
+// showing empty lists.
 const FALLBACK_STREAMS = ["Nevada-1", "Nevada-2", "Nevada-3", "test-recording", "Nevada-4"];
-const FALLBACK_MARCAS = [
+const FALLBACK_BRANDS = [
   "tesla", "ram", "jeep", "subaru", "toyota", "chevrolet",
   "ford", "gmc", "nissan", "lexus", "mercedes", "honda", "kia",
 ];
 const FALLBACK_OPTIONS: DetectionOptions = {
   streams: FALLBACK_STREAMS,
-  // Sin URL real (el backend esta caido, no hay stream que reproducir de
-  // verdad): solo hacen falta los nombres para que el carrusel y el
-  // selector de marcas se vean completos. "test-recording" es la
-  // excepcion - es un archivo estatico servido por el propio frontend
-  // (frontend/public/test-recording-v5.mp4), asi que sigue funcionando
-  // aunque el backend este caido.
+  // No real URL (the backend is down, there's no stream to actually
+  // play): only the names are needed so the carousel and brand selector
+  // look complete. "test-recording" is the exception - it's a static
+  // file served by the frontend itself (frontend/public/test-recording-v5.mp4),
+  // so it keeps working even when the backend is down.
   stream_urls: {
     ...Object.fromEntries(FALLBACK_STREAMS.map((s) => [s, ""])),
     "test-recording": "/test-recording-v5.mp4",
   },
-  marcas: FALLBACK_MARCAS,
+  brands: FALLBACK_BRANDS,
   capture_interval: 10,
 };
 const FALLBACK_BRAND_COUNTS: Record<string, number> = {
@@ -50,7 +49,7 @@ const FALLBACK_BRAND_COUNTS: Record<string, number> = {
 export interface DetectionOptions {
   streams: string[];
   stream_urls: Record<string, string>;
-  marcas: string[];
+  brands: string[];
   capture_interval: number;
 }
 
@@ -61,20 +60,20 @@ export type DetectionStatus =
   | "stopped"
   | "error";
 
-// Distinto de DetectionStatus (que es el ciclo de vida de UN job de
-// deteccion): esto es si el backend responde en absoluto. "checking"
-// dura como mucho BACKEND_CHECK_TIMEOUT_MS desde que monta la pagina.
+// Different from DetectionStatus (which is the lifecycle of ONE
+// detection job): this is whether the backend responds at all.
+// "checking" lasts at most BACKEND_CHECK_TIMEOUT_MS from page mount.
 export type BackendStatus = "checking" | "online" | "offline";
 
 export interface DetectionEvent {
   type: "status" | "match" | "detected" | "error" | "stopped" | string;
-  marca?: string;
-  confianza?: number;
+  brand?: string;
+  confidence?: number;
   timestamp?: string;
   message?: string;
   frame?: number;
-  // Todas las imagenes viajan codificadas en base64 directo en el evento
-  // (nunca como ruta a un archivo servido por HTTP) - ver detector.py.
+  // All images travel base64-encoded directly in the event (never as a
+  // path to a file served over HTTP) - see detector.py.
   frame_data?: string;
   crop_data?: string;
   image_data?: string;
@@ -85,27 +84,27 @@ interface StartResponse {
   job_id: string;
   status: string;
   stream: string;
-  marcas: string[];
+  brands: string[];
 }
 
 /**
- * Hook para el dashboard: carga opciones (streams/marcas), arranca/detiene
- * un job de deteccion y escucha eventos en tiempo real por WebSocket.
+ * Hook for the dashboard: loads options (streams/brands), starts/stops
+ * a detection job, and listens to real-time events over WebSocket.
  */
 export function useVehicleDetection() {
-  // Arrancan ya con los datos de muestra (no un estado vacio a la espera
-  // de un timeout): si el backend responde, se sobrescriben con los
-  // reales; si no, la interfaz nunca se ve vacia/rota mientras tanto.
+  // Start already populated with sample data (not an empty state waiting
+  // on a timeout): if the backend responds, it gets overwritten with the
+  // real data; if not, the UI never looks empty/broken in the meantime.
   const [options, setOptions] = useState<DetectionOptions>(FALLBACK_OPTIONS);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<DetectionStatus>("idle");
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [events, setEvents] = useState<DetectionEvent[]>([]);
-  // Total acumulado por marca de TODAS las sesiones (persistido en el
-  // backend), no solo de los "match" recibidos por WebSocket en esta
-  // pestaña. Se carga una vez al montar; los matches de esta sesion se
-  // suman encima en el componente que consume este hook.
+  // Accumulated total per brand from ALL sessions (persisted in the
+  // backend), not just the "match" events received over WebSocket in
+  // this tab. Loaded once on mount; this session's matches get added
+  // on top in the component that consumes this hook.
   const [persistedBrandCounts, setPersistedBrandCounts] = useState<
     Record<string, number>
   >(FALLBACK_BRAND_COUNTS);
@@ -116,20 +115,21 @@ export function useVehicleDetection() {
     jobIdRef.current = jobId;
   }, [jobId]);
 
-  // F5/cerrar pestaña con un job corriendo: sin esto, el frontend se resetea
-  // pero el proceso del backend sigue vivo indefinidamente (huerfano). Un
-  // fetch normal en beforeunload no llega a completarse antes de que el
-  // navegador descarte la pagina; sendBeacon esta pensado justo para esto.
+  // F5/closing tab with a job running: without this, the frontend resets
+  // but the backend process stays alive indefinitely (orphaned). A normal
+  // fetch in beforeunload doesn't get to complete before the browser
+  // discards the page; sendBeacon is meant for exactly this.
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (!jobIdRef.current) return;
-      // Sin body y como query param a proposito: API_BASE es otro origen
-      // (puerto distinto), y un body JSON cross-origin obliga a un
-      // preflight OPTIONS antes del POST real que durante un F5 puede no
-      // completarse a tiempo, dejando el proceso del backend huerfano. Un
-      // sendBeacon sin body ni headers custom es una peticion CORS
-      // "simple" (no preflight). El backend acepta job_id por query param
-      // como fallback especifico para este caso (ver /stop en api.py).
+      // No body and as a query param on purpose: API_BASE is a different
+      // origin (different port), and a cross-origin JSON body forces an
+      // OPTIONS preflight before the real POST that may not complete in
+      // time during an F5, leaving the backend process orphaned. A
+      // sendBeacon with no body or custom headers is a "simple" CORS
+      // request (no preflight). The backend accepts job_id as a query
+      // param as a fallback specifically for this case (see /stop in
+      // api.py).
       navigator.sendBeacon(
         `${API_BASE}/stop?job_id=${encodeURIComponent(jobIdRef.current)}`
       );
@@ -139,9 +139,9 @@ export function useVehicleDetection() {
   }, []);
 
   useEffect(() => {
-    // Unica responsabilidad de este timeout: avisar (backendStatus) de
-    // que el backend no responde. Los datos de muestra ya estan puestos
-    // desde el estado inicial, asi que esto no toca options/brandCounts.
+    // This timeout has one job: flag (backendStatus) that the backend
+    // isn't responding. The sample data is already set from the initial
+    // state, so this doesn't touch options/brandCounts.
     const alertTimeoutId = window.setTimeout(() => {
       setBackendStatus((prev) => (prev === "online" ? prev : "offline"));
     }, BACKEND_DOWN_ALERT_MS);
@@ -154,8 +154,8 @@ export function useVehicleDetection() {
         setOptions(data);
       })
       .catch(() => {
-        // El timeout de arriba se encarga de avisar; un fallo puntual
-        // aqui no debe tumbar el status del job en curso.
+        // The timeout above handles the warning; a one-off failure here
+        // shouldn't tank the status of the running job.
       });
 
     fetch(`${API_BASE}/stats/brands`)
@@ -172,7 +172,7 @@ export function useVehicleDetection() {
   }, []);
 
   const start = useCallback(
-    async (stream: string, marcas: string[]) => {
+    async (stream: string, brands: string[]) => {
       setStatus("starting");
       setErrorMessage(null);
       let res: Response;
@@ -180,26 +180,27 @@ export function useVehicleDetection() {
         res = await fetch(`${API_BASE}/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stream, marcas }),
+          body: JSON.stringify({ stream, brands }),
         });
       } catch {
-        // Backend inalcanzable (caido, red cortada, etc.): sin este catch
-        // el fetch rechazado dejaba el boton pegado en "Starting..." para
-        // siempre, ya que quien llama a start() no espera su promesa.
+        // Backend unreachable (down, network cut off, etc.): without this
+        // catch the rejected fetch left the button stuck on "Starting..."
+        // forever, since whoever calls start() doesn't await its promise.
         setErrorMessage("Backend is unreachable right now.");
         setStatus("error");
         return;
       }
 
       if (!res.ok) {
-        // El backend manda el detalle en {"detail": "..."} (convencion de
-        // FastAPI/HTTPException) - por ejemplo, "stream ya en uso por otro
-        // usuario" (409). Si no hay body legible, cae a un mensaje generico.
+        // The backend sends the detail in {"detail": "..."} (FastAPI/
+        // HTTPException convention) - e.g. "stream already in use by
+        // another user" (409). If there's no readable body, falls back
+        // to a generic message.
         const message = await res
           .json()
           .then((body: { detail?: string }) => body.detail)
           .catch(() => undefined);
-        setErrorMessage(message ?? "No se pudo iniciar la deteccion.");
+        setErrorMessage(message ?? "Could not start detection.");
         setStatus("error");
         return;
       }
@@ -224,11 +225,11 @@ export function useVehicleDetection() {
     []
   );
 
-  // Llamado por StreamPlayer cada vez que recorta un frame del <video>
-  // (canvas): se lo manda al backend por el mismo WebSocket del job, en
-  // vez de que el backend se conecte el mismo al stream. `dataUrl` es lo
-  // que devuelve canvas.toDataURL() - se le quita el prefijo
-  // "data:image/jpeg;base64," porque el backend solo necesita los bytes.
+  // Called by StreamPlayer every time it crops a frame from the <video>
+  // (canvas): it's sent to the backend over the same job WebSocket,
+  // instead of the backend connecting to the stream itself. `dataUrl` is
+  // what canvas.toDataURL() returns - the "data:image/jpeg;base64,"
+  // prefix is stripped because the backend only needs the bytes.
   const sendFrame = useCallback((dataUrl: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const base64 = dataUrl.split(",")[1] ?? dataUrl;

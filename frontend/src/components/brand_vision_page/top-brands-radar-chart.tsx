@@ -14,16 +14,16 @@ import {
 } from "@/components/ui/chart"
 import type { TopBrandsRadarChartProps } from "@/types/brand-vision-page"
 
-// Datos de muestra: solo se usan cuando todavia no hay ninguna deteccion
-// real (ni de esta sesion ni persistida), para que el chart no se vea
-// vacio/roto antes de arrancar una deteccion por primera vez.
+// Sample data: only used when there's no real detection yet (neither in
+// this session nor persisted), so the chart doesn't look empty/broken
+// before starting a detection for the first time.
 const DUMMY_TOP_BRANDS_RADAR = [
-  { marca: "toyota", count: 24 },
-  { marca: "ford", count: 18 },
-  { marca: "honda", count: 15 },
-  { marca: "chevrolet", count: 12 },
-  { marca: "nissan", count: 9 },
-  { marca: "jeep", count: 6 },
+  { brand: "toyota", count: 24 },
+  { brand: "ford", count: 18 },
+  { brand: "honda", count: 15 },
+  { brand: "chevrolet", count: 12 },
+  { brand: "nissan", count: 9 },
+  { brand: "jeep", count: 6 },
 ]
 
 const chartConfig = {
@@ -34,10 +34,10 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function TopBrandsRadarChart({ topBrands }: TopBrandsRadarChartProps) {
-  // Top 6 marcas por numero de detecciones, mismo dato que "Total Activity"
-  // (topBrands: persistido + sesion actual) pero recortado a 6 para que el
-  // radar no se sature de ejes.
-  const brands = topBrands.slice(0, 6).map((b) => ({ marca: b.marca, count: b.count }))
+  // Top 6 brands by detection count, same data as "Total Activity"
+  // (topBrands: persisted + current session) but trimmed to 6 so the
+  // radar doesn't get saturated with axes.
+  const brands = topBrands.slice(0, 6).map((b) => ({ brand: b.brand, count: b.count }))
   const isDummy = brands.length === 0
   const displayBrands = isDummy ? DUMMY_TOP_BRANDS_RADAR : brands
 
@@ -62,10 +62,10 @@ export function TopBrandsRadarChart({ topBrands }: TopBrandsRadarChartProps) {
           <RadarChart data={displayBrands}>
             <ChartTooltip
               cursor={false}
-              content={<ChartTooltipContent nameKey="marca" />}
+              content={<ChartTooltipContent nameKey="brand" />}
             />
             <PolarAngleAxis
-              dataKey="marca"
+              dataKey="brand"
               tick={{ fontSize: 10 }}
               tickFormatter={(value: string) =>
                 value.charAt(0).toUpperCase() + value.slice(1)

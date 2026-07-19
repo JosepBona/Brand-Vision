@@ -5,11 +5,11 @@ import { Card } from "@/components/ui/card"
 import { brandColor } from "@/components/brand_vision_page/brand-color"
 import type { HighConfidenceChartProps } from "@/types/brand-vision-page"
 
-// ResponsiveContainer solo redimensiona el SVG via ResizeObserver, que no
-// reacciona a los cambios de altura hechos por breakpoints de Tailwind (son
-// CSS puro, no un resize real del contenedor). Se deriva la altura del
-// chart directamente del ancho de ventana para que escale con los mismos
-// cortes 3xl/4xl que el resto del layout.
+// ResponsiveContainer only resizes the SVG via ResizeObserver, which
+// doesn't react to height changes made by Tailwind breakpoints (they're
+// pure CSS, not an actual container resize). The chart height is derived
+// directly from the window width so it scales with the same 3xl/4xl
+// breakpoints as the rest of the layout.
 function usePieChartHeight() {
   const [height, setHeight] = useState(() =>
     typeof window === "undefined"
@@ -32,37 +32,37 @@ function usePieChartHeight() {
   return height
 }
 
-// Datos de muestra: solo se usan cuando todavia no hay ninguna deteccion
-// real (ni de esta sesion ni persistida), para que el chart no se vea
-// vacio/roto antes de arrancar una deteccion por primera vez.
+// Sample data: only used when there's no real detection yet (neither in
+// this session nor persisted), so the chart doesn't look empty/broken
+// before starting a detection for the first time.
 const DUMMY_HIGH_CONFIDENCE_BRANDS = [
-  { marca: "toyota", count: 8, color: brandColor(0) },
-  { marca: "ford", count: 5, color: brandColor(1) },
-  { marca: "honda", count: 3, color: brandColor(2) },
-  { marca: "chevrolet", count: 2, color: brandColor(3) },
+  { brand: "toyota", count: 8, color: brandColor(0) },
+  { brand: "ford", count: 5, color: brandColor(1) },
+  { brand: "honda", count: 3, color: brandColor(2) },
+  { brand: "chevrolet", count: 2, color: brandColor(3) },
 ]
 
 export function HighConfidenceChart({ matches, topBrands }: HighConfidenceChartProps) {
-  // Distribucion de marcas SOLO entre matches de ESTA sesion con confianza
-  // > 90%: la confianza por deteccion solo viaja en los eventos "match" del
-  // WebSocket, no en el total persistido, asi que este grafico no se puede
-  // ampliar con el historico. Los colores se reusan de topBrands para que
-  // la misma marca se vea del mismo color en toda la pagina.
+  // Brand distribution ONLY among matches from THIS session with
+  // confidence > 90%: per-detection confidence only travels in the
+  // WebSocket's "match" events, not in the persisted total, so this chart
+  // can't be extended with history. Colors are reused from topBrands so
+  // the same brand shows the same color across the whole page.
   const brands = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const match of matches) {
-      if (!match.marca || match.confianza == null || match.confianza <= 0.9) continue
-      counts[match.marca] = (counts[match.marca] ?? 0) + 1
+      if (!match.brand || match.confidence == null || match.confidence <= 0.9) continue
+      counts[match.brand] = (counts[match.brand] ?? 0) + 1
     }
-    const colorByMarca = Object.fromEntries(
-      topBrands.map((b) => [b.marca, b.color])
+    const colorByBrand = Object.fromEntries(
+      topBrands.map((b) => [b.brand, b.color])
     )
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .map(([marca, count], idx) => ({
-        marca,
+      .map(([brand, count], idx) => ({
+        brand,
         count,
-        color: colorByMarca[marca] ?? brandColor(idx),
+        color: colorByBrand[brand] ?? brandColor(idx),
       }))
   }, [matches, topBrands])
 
@@ -87,7 +87,7 @@ export function HighConfidenceChart({ matches, topBrands }: HighConfidenceChartP
             <Pie
               data={displayBrands}
               dataKey="count"
-              nameKey="marca"
+              nameKey="brand"
               innerRadius="55%"
               outerRadius="90%"
               paddingAngle={2}
@@ -96,7 +96,7 @@ export function HighConfidenceChart({ matches, topBrands }: HighConfidenceChartP
               isAnimationActive={false}
             >
               {displayBrands.map((d) => (
-                <Cell key={d.marca} fill={d.color} />
+                <Cell key={d.brand} fill={d.color} />
               ))}
             </Pie>
             <RechartsTooltip
@@ -106,7 +106,7 @@ export function HighConfidenceChart({ matches, topBrands }: HighConfidenceChartP
                 borderRadius: 8,
                 fontSize: 12,
               }}
-              formatter={(value, marca) => [value, marca]}
+              formatter={(value, brand) => [value, brand]}
             />
           </PieChart>
         </ResponsiveContainer>

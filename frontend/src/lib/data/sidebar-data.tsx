@@ -1,8 +1,9 @@
 import { CarIcon, BookOpenIcon, DownloadIcon } from "lucide-react"
 import linkedin_logo from "@/assets/linkeding-logo.png"
 
-// lucide-react no incluye logos de marcas de terceros (paso lo mismo con
-// Linkedin): SVG del octocat inline en vez de un asset de imagen aparte.
+// lucide-react doesn't include third-party brand logos (same thing
+// happened with LinkedIn): inline octocat SVG instead of a separate
+// image asset.
 function GithubIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor">

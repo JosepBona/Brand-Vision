@@ -30,8 +30,8 @@ function formatDate(timestamp?: string) {
   })
 }
 
-function safeFilename(marca: string | undefined, timestamp: string | undefined, ext: string) {
-  const label = marca ?? "vehicle"
+function safeFilename(brand: string | undefined, timestamp: string | undefined, ext: string) {
+  const label = brand ?? "vehicle"
   const ts = (timestamp ?? "").replace(/[:.]/g, "-")
   return `${label}_${ts}${ext}`
 }
@@ -45,11 +45,11 @@ function ImageWithDownload({
   return (
     <div className="group relative mx-auto inline-block">
       <img src={src} alt={alt} className={className} />
-      {/* src es un data URI (mismo origen por definicion, no un recurso
-          servido por HTTP en otro puerto), asi que el atributo "download"
-          nativo funciona directo - ya no hace falta el workaround de
-          fetch+blob que se necesitaba antes para forzar la descarga
-          cross-origin. */}
+      {/* src is a data URI (same-origin by definition, not a resource
+          served over HTTP on another port), so the native "download"
+          attribute works directly - no longer need the fetch+blob
+          workaround that used to be required to force cross-origin
+          downloads. */}
       <a
         href={src}
         download={filename}
@@ -84,8 +84,8 @@ export function DetectionHistoryTable({ matches }: DetectionHistoryTableProps) {
             <TableRow className="opacity-70" style={{ background: "var(--gradient-teal-blue)" }}>
               <TableHead className="text-center">Brand</TableHead>
               <TableHead className="text-center">Confidence</TableHead>
-              <TableHead className="text-center">Date</TableHead>
-              <TableHead className="text-center">Original image</TableHead>
+              <TableHead className="hidden text-center sm:table-cell">Date</TableHead>
+              <TableHead className="hidden text-center sm:table-cell">Original image</TableHead>
               <TableHead className="text-center">Cropped image</TableHead>
             </TableRow>
           </TableHeader>
@@ -93,8 +93,14 @@ export function DetectionHistoryTable({ matches }: DetectionHistoryTableProps) {
             {matches.length === 0 ? (
               <TableRow>
                 <TableCell
+                  colSpan={3}
+                  className="py-6 text-center text-muted-foreground sm:hidden"
+                >
+                  No detections recorded yet.
+                </TableCell>
+                <TableCell
                   colSpan={5}
-                  className="py-6 text-center text-muted-foreground"
+                  className="hidden py-6 text-center text-muted-foreground sm:table-cell"
                 >
                   No detections recorded yet.
                 </TableCell>
@@ -103,22 +109,22 @@ export function DetectionHistoryTable({ matches }: DetectionHistoryTableProps) {
               pagedMatches.map((match, idx) => (
                 <TableRow key={`${match.timestamp}-${idx}`}>
                   <TableCell className="text-center font-medium capitalize">
-                    {match.marca ?? "—"}
+                    {match.brand ?? "—"}
                   </TableCell>
                   <TableCell className="text-center">
-                    {match.confianza != null
-                      ? `${(match.confianza * 100).toFixed(0)}%`
+                    {match.confidence != null
+                      ? `${(match.confidence * 100).toFixed(0)}%`
                       : "—"}
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="hidden text-center sm:table-cell">
                     {formatDate(match.timestamp)}
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="hidden text-center sm:table-cell">
                     {match.frame_data ? (
                       <ImageWithDownload
                         src={`data:image/jpeg;base64,${match.frame_data}`}
                         alt="Original frame"
-                        filename={safeFilename(match.marca, match.timestamp, ".jpg")}
+                        filename={safeFilename(match.brand, match.timestamp, ".jpg")}
                         className="mx-auto h-24 w-36 rounded bg-muted object-contain"
                       />
                     ) : (
@@ -130,7 +136,7 @@ export function DetectionHistoryTable({ matches }: DetectionHistoryTableProps) {
                       <ImageWithDownload
                         src={`data:image/png;base64,${match.crop_data}`}
                         alt="Cropped vehicle"
-                        filename={safeFilename(match.marca, match.timestamp, ".png")}
+                        filename={safeFilename(match.brand, match.timestamp, ".png")}
                         className="mx-auto h-24 w-36 rounded bg-muted object-contain"
                       />
                     ) : (

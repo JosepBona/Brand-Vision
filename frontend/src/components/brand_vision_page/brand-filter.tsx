@@ -35,9 +35,9 @@ export function BrandFilter({
             dragging: true,
             moved: false,
           }
-          // No capturamos el puntero aqui: hacerlo de inmediato reasigna
-          // el "click" resultante al wrapper y los toggles dejan de
-          // recibirlo. Solo se captura si de verdad se arrastra.
+          // We don't capture the pointer here: doing it immediately
+          // reassigns the resulting "click" to the wrapper and the toggles
+          // stop receiving it. Only captured if actually dragging.
         }}
         onPointerMove={(e) => {
           const el = brandsScrollerRef.current
@@ -91,12 +91,12 @@ export function BrandFilter({
             disabled={disabled}
             className="flex-nowrap gap-2"
           >
-            {brands.map((marca) => {
-              const active = selected.includes(marca)
+            {brands.map((brand) => {
+              const active = selected.includes(brand)
               return (
                 <ToggleGroupItem
-                  key={marca}
-                  value={marca}
+                  key={brand}
+                  value={brand}
                   style={
                     active
                       ? { backgroundImage: "var(--gradient-purple-pink)" }
@@ -109,7 +109,7 @@ export function BrandFilter({
                       : "data-[state=on]:border-primary"
                   )}
                 >
-                  {marca}
+                  {brand}
                 </ToggleGroupItem>
               )
             })}

@@ -12,9 +12,9 @@ import stream3 from "@/assets/stream3.jpg"
 import stream4 from "@/assets/stream4.jpg"
 import testRecordingThumbnail from "@/assets/test-recording.jpg"
 
-// Miniaturas locales, asignadas por nombre de stream (no por posicion:
-// el orden en options.streams puede cambiar). Si un stream no tiene
-// entrada aqui, simplemente no muestra imagen (ver fallback mas abajo).
+// Local thumbnails, assigned by stream name (not by position: the order
+// in options.streams can change). If a stream has no entry here, it
+// simply shows no image (see fallback below).
 const thumbnailsByStream: Record<string, string> = {
   "Nevada-1": stream1,
   "Nevada-2": stream2,
@@ -23,12 +23,12 @@ const thumbnailsByStream: Record<string, string> = {
   "test-recording": testRecordingThumbnail,
 }
 
-// TODO: quitar una vez validado el carrusel. Stream dummy solo para
-// visualizar el scroll/las flechas con mas de 3 elementos; no existe en
-// el backend asi que no se puede seleccionar para iniciar deteccion.
-// Nevada-1..4 y test-recording ya son streams reales (STREAMS_DISPONIBLES
-// en detector.py), asi que salen de options.streams y no necesitan
-// entrada demo aqui.
+// TODO: remove once the carousel is validated. Dummy stream just to
+// visualize scroll/arrows with more than 3 items; it doesn't exist in
+// the backend so it can't be selected to start detection. Nevada-1..4
+// and test-recording are already real streams (STREAMS_DISPONIBLES in
+// detector.py), so they come from options.streams and don't need a
+// demo entry here.
 const DEMO_EXTRA_STREAMS = ["Nevada-6 (demo)"]
 
 const STREAM_SCROLL_AMOUNT = 240
@@ -50,8 +50,8 @@ export function StreamCarousel({
     atEnd: false,
   })
 
-  // Streams "demo" solo se muestran como miniaturas para probar el
-  // carrusel; se excluyen de /options asi que nunca llegan a start().
+  // "demo" streams only show as thumbnails to test the carousel; they're
+  // excluded from /options so they never reach start().
   const displayStreams = [...streams, ...DEMO_EXTRA_STREAMS]
 
   const updateStreamEdges = () => {
@@ -63,14 +63,14 @@ export function StreamCarousel({
     })
   }
 
-  // Fija el estado inicial de las flechas cuando cambia la lista de
-  // streams (p.ej. al cargar /options), por si de entrada ya no cabe todo.
+  // Sets the initial arrow state when the stream list changes (e.g. when
+  // /options loads), in case everything doesn't fit from the start.
   useEffect(() => {
     updateStreamEdges()
   }, [displayStreams.length])
 
   const selectStream = (id: string) => {
-    if (!(id in streamUrls)) return // entradas demo: no seleccionables
+    if (!(id in streamUrls)) return // demo entries: not selectable
     onSelectStream(id)
   }
 
@@ -142,10 +142,10 @@ export function StreamCarousel({
         </>
       ) : (
         <div className="relative">
-          {/* Fundidos en los bordes: indican que hay mas streams fuera
-              de vista en vez de cortar la ultima card en seco. Solo se
-              muestran mientras haya contenido oculto en ese lado
-              (streamEdges), y no bloquean el scroll (pointer-events-none). */}
+          {/* Edge fades: indicate there are more streams out of view instead
+              of abruptly cutting off the last card. Only shown while there
+              is hidden content on that side (streamEdges), and don't block
+              scrolling (pointer-events-none). */}
           {!streamEdges.atStart && (
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-background to-transparent" />
           )}
@@ -170,24 +170,24 @@ export function StreamCarousel({
                   className={cn(
                     "group relative w-56 shrink-0 overflow-hidden rounded-2xl border-[3px] border-border bg-card text-left shadow-[0_10px_28px_-8px_rgba(0,0,0,0.6)] transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_16px_36px_-8px_rgba(0,0,0,0.7)] 3xl:w-72 4xl:w-96",
                     isDemo && "cursor-default",
-                    // Seleccionado = misma pinta que el hover, pero fija:
-                    // escala y sombra del hover se quedan puestas en vez
-                    // de depender de que el raton siga encima.
+                    // Selected = same look as hover, but fixed: hover's
+                    // scale and shadow stay applied instead of depending
+                    // on the mouse staying on top.
                     active &&
                       "scale-[1.03] shadow-[0_16px_36px_-8px_rgba(0,0,0,0.7)]"
                   )}
                 >
-                  {/* Linea que recorre el borde (rosa/azul), visible en
-                      hover (group-hover, via CSS) o si el stream esta
-                      seleccionado (border-beam-active). Es el unico
-                      indicador de seleccion: ya no se tine de azul el
-                      fondo/texto, la animacion del beam (heredada del
-                      hover) es la que queda fija.
-                      Nota: no se usa cn() aqui porque tailwind-merge
-                      interpreta "border-beam" y "border-beam-active"
-                      como clases de borde en conflicto (ambas empiezan
-                      por "border-") y descarta la primera, dejando el
-                      span sin el gradiente/animacion base. */}
+                  {/* Line that travels around the border (pink/blue),
+                      visible on hover (group-hover, via CSS) or if the
+                      stream is selected (border-beam-active). It's the
+                      only selection indicator: the background/text no
+                      longer tints blue, the beam's animation (inherited
+                      from hover) is what stays fixed.
+                      Note: cn() isn't used here because tailwind-merge
+                      interprets "border-beam" and "border-beam-active"
+                      as conflicting border classes (both start with
+                      "border-") and drops the first one, leaving the
+                      span without the base gradient/animation. */}
                   <span
                     className={`border-beam${active ? " border-beam-active" : ""}`}
                   />

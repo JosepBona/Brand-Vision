@@ -4,15 +4,15 @@ export interface StreamPlayerProps {
   url: string
   className?: string
   onFirstFrame?: (ms: number) => void
-  // Cada cuantos segundos se recorta un frame del <video> para mandarlo a
-  // detectar. Si se omite onFrameCapture, no se captura nada (solo se
-  // reproduce).
+  // How many seconds between cropping a frame from the <video> to send
+  // for detection. If onFrameCapture is omitted, nothing is captured
+  // (it just plays).
   captureIntervalSeconds?: number
   onFrameCapture?: (dataUrl: string) => void
 }
 
 export interface BrandStat {
-  marca: string
+  brand: string
   count: number
   pct: number
   color: string
@@ -55,11 +55,11 @@ export interface DetectionActionBarProps {
 
 export interface HighConfidenceChartProps {
   matches: DetectionEvent[]
-  topBrands: { marca: string; color: string }[]
+  topBrands: { brand: string; color: string }[]
 }
 
 export interface TopBrandsRadarChartProps {
-  topBrands: { marca: string; count: number }[]
+  topBrands: { brand: string; count: number }[]
 }
 
 export interface LastCapturePanelProps {

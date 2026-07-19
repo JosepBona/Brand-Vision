@@ -117,8 +117,8 @@
     --sidebar-accent-foreground: oklch(0.97 0.005 290);
     --sidebar-border: oklch(1 0 0 / 8%);
     --sidebar-ring: oklch(0.65 0.28 322);
-    /* Toque neon: mas chroma (saturacion) que las versiones originales,
-       manteniendo el mismo tono/hue para no cambiar la identidad de color. */
+    /* Neon touch: more chroma (saturation) than the original versions,
+       keeping the same tone/hue to preserve the color identity. */
     --gradient-purple-pink: linear-gradient(135deg, oklch(0.65 0.3 322), oklch(0.72 0.28 350));
     --gradient-teal-blue: linear-gradient(135deg, oklch(0.8 0.2 195), oklch(0.68 0.26 255));
 }
@@ -135,11 +135,11 @@
     }
 }
 
-/* "Border beam": linea que recorre el borde de una card alternando entre el
-   rosa y el azul ya usados en el resto de la web (mismos hues que
-   --gradient-purple-pink / --gradient-teal-blue). @property registra el
-   angulo como tipo <angle> para que la animacion lo interpole de forma
-   continua (sin esto, animar una custom property salta en vez de girar). */
+/* "Border beam": a line that travels around a card's border, alternating
+   between the pink and blue already used elsewhere on the site (same hues
+   as --gradient-purple-pink / --gradient-teal-blue). @property registers
+   the angle as type <angle> so the animation interpolates it continuously
+   (without this, animating a custom property jumps instead of spinning). */
 @property --border-beam-angle {
   syntax: '<angle>';
   initial-value: 0deg;

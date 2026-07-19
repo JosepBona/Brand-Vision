@@ -2,10 +2,10 @@ import { Card } from "@/components/ui/card"
 import image_3 from "@/assets/image_3.jpg"
 import type { HeroBrandVisionProps } from "@/types/brand-vision-page"
 
-// Hero: titulo + stats por marca, con la ilustracion como fondo de la propia
-// Card (background-image, cover) en vez de un <img> flotando a la derecha.
-// Un scrim (gradiente bg-card -> transparente) se apila encima de la imagen
-// para que el texto de la izquierda siga legible sobre el fondo.
+// Hero: title + per-brand stats, with the illustration as the Card's own
+// background (background-image, cover) instead of an <img> floating on the
+// right. A scrim (bg-card -> transparent gradient) is layered over the
+// image so the text on the left stays legible over the background.
 export function HeroBrandVision({ brandStats }: HeroBrandVisionProps) {
   return (
     <Card
@@ -48,7 +48,7 @@ export function HeroBrandVision({ brandStats }: HeroBrandVisionProps) {
           <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted 3xl:h-3 4xl:h-5">
             {brandStats.top.map((brand) => (
               <div
-                key={brand.marca}
+                key={brand.brand}
                 className="h-full"
                 style={{
                   width: `${brand.pct}%`,
@@ -60,15 +60,16 @@ export function HeroBrandVision({ brandStats }: HeroBrandVisionProps) {
         </div>
 
         {brandStats.top.length > 0 && (
-          // grid-flow-col + grid-rows-3: maximo 3 marcas por columna, las
-          // columnas siguientes se apilan a la derecha en vez de seguir
-          // creciendo la lista hacia abajo sin limite. Recortado a las 9
-          // marcas con mas detecciones para que la leyenda no crezca sin
-          // fin conforme aparecen mas marcas.
-          <div className="opacity-90 mt-2.5 grid w-fit auto-cols-max grid-flow-col grid-rows-3 gap-x-5 gap-y-1 rounded-lg bg-background/80 p-3 backdrop-blur-sm 3xl:mt-4 3xl:gap-x-7 3xl:gap-y-2 3xl:p-4 4xl:gap-x-10 4xl:p-6">
+          // grid-flow-col + grid-rows-3: at most 3 brands per column, extra
+          // columns stack to the right instead of the list growing downward
+          // without limit. Trimmed to the top 9 brands by detection count so
+          // the legend doesn't grow unbounded as more brands appear. Mobile
+          // only fits 6 (2 columns): the last 3 are hidden via CSS instead of
+          // slicing the array, to avoid duplicating markup per breakpoint.
+          <div className="opacity-90 mt-2.5 grid w-fit auto-cols-max grid-flow-col grid-rows-3 gap-x-9 gap-y-1 rounded-lg bg-background/80 p-3 backdrop-blur-sm [&>*:nth-child(n+7)]:hidden sm:gap-x-5 sm:[&>*:nth-child(n+7)]:flex 3xl:mt-4 3xl:gap-x-7 3xl:gap-y-2 3xl:p-4 4xl:gap-x-10 4xl:p-6">
             {brandStats.top.slice(0, 9).map((brand) => (
               <div
-                key={brand.marca}
+                key={brand.brand}
                 className="flex w-36 items-center justify-between gap-4 text-xs 3xl:w-44 3xl:text-sm 4xl:w-60 4xl:text-lg"
               >
                 <span className="flex items-center gap-1.5 capitalize">
@@ -76,7 +77,7 @@ export function HeroBrandVision({ brandStats }: HeroBrandVisionProps) {
                     className="h-1.5 w-1.5 shrink-0 rounded-full 3xl:h-2 3xl:w-2"
                     style={{ backgroundColor: brand.color }}
                   />
-                  {brand.marca}
+                  {brand.brand}
                 </span>
                 <span className="shrink-0 text-muted-foreground">
                   {brand.count.toLocaleString("en-US")} · {brand.pct}%

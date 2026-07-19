@@ -27,33 +27,33 @@ export function VehicleBrandDetector() {
     sendFrame,
   } = useVehicleDetection()
 
-  // El backend solo soporta UN stream por job (/start recibe "stream", no
-  // una lista), asi que la seleccion de stream es unica, no multiple.
+  // The backend only supports ONE stream per job (/start receives
+  // "stream", not a list), so stream selection is single, not multiple.
   const [selectedStream, setSelectedStream] = useState<string>("")
   const [selectedBrands, setSelectedBrands] = useState<string[]>([])
 
   const isRunning = status === "running" || status === "starting"
-  // Distinto de isRunning: la interfaz del reproductor de video no debe
-  // montarse hasta que el backend confirme que el /start salio bien (p.ej.
-  // no hay conflicto de stream ya en uso - ver 409 en api.py). Si se
-  // mostrara ya en "starting", un fallo rapido (409, error de red) hacia
-  // que el carrusel cambiara a video y volviera al carrusel casi al
-  // instante - el parpadeo que se queria evitar.
+  // Different from isRunning: the video player UI shouldn't mount until
+  // the backend confirms /start went well (e.g. no conflict with a stream
+  // already in use - see 409 in api.py). If it showed already in
+  // "starting", a quick failure (409, network error) would make the
+  // carousel switch to video and back to the carousel almost instantly -
+  // the flicker this was meant to avoid.
   const showPlayer = status === "running"
 
-  // Marca si el <video> ya empezo a mostrar imagen en ESTA ejecucion: la
-  // cuenta atras de "next capture" no debe empezar a bajar hasta que esto
-  // sea true (ver el efecto de mas abajo), asi que arranca en false y se
-  // resetea cada vez que se detiene la deteccion.
+  // Marks whether the <video> has started showing an image in THIS run:
+  // the "next capture" countdown shouldn't start counting down until this
+  // is true (see the effect below), so it starts at false and resets
+  // every time detection stops.
   const [videoStarted, setVideoStarted] = useState(false)
   const handleStreamFirstFrame = () => {
     setVideoStarted(true)
   }
 
-  // Cuenta atras hasta la proxima captura del backend: se reinicia cada vez
-  // que llega un evento con un numero de frame nuevo (el backend emite uno
-  // por cada captura, cada DEFAULT_INTERVAL segundos), no con un timer ciego
-  // desacoplado de lo que realmente esta pasando en el backend.
+  // Countdown to the backend's next capture: resets every time an event
+  // arrives with a new frame number (the backend emits one per capture,
+  // every DEFAULT_INTERVAL seconds), not with a blind timer decoupled
+  // from what's actually happening in the backend.
   const [secondsToNextCapture, setSecondsToNextCapture] = useState(
     options.capture_interval
   )
@@ -65,10 +65,10 @@ export function VehicleBrandDetector() {
     const latestFrame = latest.frame
     const isNewFrame =
       typeof latestFrame === "number" && latestFrame !== lastFrameRef.current
-    // capture_failed no trae "frame" (la captura fallo, no hubo frame que
-    // contar), pero el backend igual duerme DEFAULT_INTERVAL antes de
-    // reintentar - sin este caso el countdown se queda pegado en 0 durante
-    // una racha de fallos de captura.
+    // capture_failed doesn't carry a "frame" (the capture failed, there
+    // was no frame to count), but the backend still sleeps DEFAULT_INTERVAL
+    // before retrying - without this case the countdown gets stuck at 0
+    // during a streak of capture failures.
     if (isNewFrame) {
       lastFrameRef.current = latestFrame
       setSecondsToNextCapture(options.capture_interval)
@@ -84,9 +84,9 @@ export function VehicleBrandDetector() {
       setSecondsToNextCapture(options.capture_interval)
       return
     }
-    // Corriendo pero el <video> todavia no ha mostrado imagen: la cuenta
-    // atras se queda quieta en el valor completo, no empieza a bajar hasta
-    // que handleStreamFirstFrame confirme que ya hay imagen en pantalla.
+    // Running but the <video> hasn't shown an image yet: the countdown
+    // stays fixed at the full value, it doesn't start counting down until
+    // handleStreamFirstFrame confirms there's already an image on screen.
     if (!videoStarted) {
       setSecondsToNextCapture(options.capture_interval)
       return
@@ -101,14 +101,14 @@ export function VehicleBrandDetector() {
   const brandStats = useMemo(() => {
     const counts: Record<string, number> = { ...persistedBrandCounts }
     for (const match of matches) {
-      if (!match.marca) continue
-      counts[match.marca] = (counts[match.marca] ?? 0) + 1
+      if (!match.brand) continue
+      counts[match.brand] = (counts[match.brand] ?? 0) + 1
     }
     const total = Object.values(counts).reduce((sum, c) => sum + c, 0)
     const top = Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .map(([marca, count], idx) => ({
-        marca,
+      .map(([brand, count], idx) => ({
+        brand,
         count,
         pct: total ? Math.round((count / total) * 100) : 0,
         color: brandColor(idx),
@@ -138,7 +138,7 @@ export function VehicleBrandDetector() {
       )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_15.625rem] 3xl:grid-cols-[1fr_17.33rem] 4xl:grid-cols-[1fr_21.33rem]">
-        {/* Columna izquierda: hero + streams + marcas + accion */}
+        {/* Left column: hero + streams + brands + action */}
         <div className="flex min-w-0 flex-col gap-5">
           <HeroBrandVision brandStats={brandStats} />
 
@@ -157,7 +157,7 @@ export function VehicleBrandDetector() {
           />
 
           <BrandFilter
-            brands={options.marcas}
+            brands={options.brands}
             selected={selectedBrands}
             onChange={setSelectedBrands}
             disabled={isRunning}
@@ -177,13 +177,13 @@ export function VehicleBrandDetector() {
           )}
         </div>
 
-        {/* Columna derecha: ocupa todo el alto del dashboard. Contiene dos mini-graficas (recharts)*/}
+        {/* Right column: spans the full height of the dashboard. Contains two mini-charts (recharts)*/}
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 3xl:gap-5 3xl:p-5">
           <HighConfidenceChart matches={matches} topBrands={brandStats.top} />
           <TopBrandsRadarChart topBrands={brandStats.top} />
 
-          {/* Ultima captura del backend, debajo de la barra lateral,
-              ocupando el resto del alto disponible. */}
+          {/* Latest backend capture, below the sidebar, taking up the
+              rest of the available height. */}
           <LastCapturePanel events={events} />
         </div>
       </div>

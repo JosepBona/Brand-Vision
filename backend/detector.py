@@ -15,7 +15,7 @@ import stats_db
 DEFAULT_INTERVAL    = 5
 DEFAULT_CONF        = 0.25
 DEFAULT_DET_MODEL   = "yolo26n.pt"
-DEFAULT_CLS_MARCA   = "best.pt"
+DEFAULT_CLS_BRAND   = "best.pt"
 IMAGE_FORMAT_FRAME  = ".jpg"
 IMAGE_FORMAT_CROP   = ".png"
 JPEG_QUALITY        = 90
@@ -35,24 +35,24 @@ SSIM_CROP_SIZE      = 240
 # the letterboxed content ends up misaligned and SSIM drops sharply
 # (~0.2) even though it's literally the same vehicle in the same frame.
 CROP_IOU_THRESHOLD  = 0.5
-MIN_CONF_MARCA      = 0
-DEFAULT_MIN_SHARPNESS = 8
+MIN_BRAND_CONF      = 0
+DEFAULT_MIN_SHARPNESS = 6
 VEHICLE_CLASSES     = {2: "car"}
 CROP_MEMORY_SECONDS = 120
 
-STREAMS_DISPONIBLES = {
+AVAILABLE_STREAMS = {
     "Nevada-1": "https://d2wse2.its.nv.gov/renoxcd02/eaf6f95b-3055-4e9c-8def-845ac6d0aa75_hspflirxcd02_public.stream/playlist.m3u8",
     "Nevada-2": "https://d1wse3.its.nv.gov/vegasxcd03/c28c7806-930c-45ed-a698-e578390b9d38_lvflirxcd03_public.stream/playlist.m3u8",
     "Nevada-3": "https://d1wse1.its.nv.gov/vegasxcd01/e2095a9e-bdc1-4dd2-95ba-bdf4bdb11f6e_lvflirxcd01_eoc.stream/playlist.m3u8",
-    # Grabacion local de prueba (frontend/public/test-recording-v5.mp4):
-    # el backend nunca la toca (ya no se conecta el mismo a ningun stream
-    # - ver historial), esta URL es solo la que usa el frontend para
-    # cargarla en el <video>.
+    # Local test recording (frontend/public/test-recording-v5.mp4):
+    # the backend never touches it (it no longer connects to any stream
+    # itself - see history), this URL is only what the frontend uses to
+    # load it into the <video>.
     "test-recording": "/test-recording-v5.mp4",
     "Nevada-4": "https://d3wse1.its.nv.gov/elkoxcd01/a3924004-7af8-4bf6-a6c2-ff8838c92ada_hspflirxcd04_public.stream/playlist.m3u8",
 }
 
-MARCAS_DISPONIBLES = [
+AVAILABLE_BRANDS = [
     "tesla", "ram", "jeep", "subaru", "toyota", "chevrolet",
     "ford", "gmc", "nissan", "lexus", "mercedes", "honda", "kia"
 ]
@@ -94,17 +94,17 @@ def emit(queue, event_type: str, **data) -> None:
         })
     except Exception:
         # never let an IPC failure take down the detection
-        log.exception("No se pudo emitir evento %s", event_type)
+        log.exception("Failed to emit event %s", event_type)
 
 
 # -- Frame decoding --------------------------------------------------------------
 #
-# Los frames ya NO los captura el backend conectandose el mismo al stream
-# HLS (eso causaba desincronizacion con 2+ streams a la vez por
-# contencion de red - ver historial de este archivo). En vez de eso, el
-# frontend captura un frame del <video> que el usuario ya esta viendo
-# (perfectamente sincronizado por definicion) y lo manda en base64 por el
-# WebSocket; api.py lo deja en `frame_queue` y aqui solo se decodifica.
+# Frames are no longer captured by the backend connecting itself to the
+# HLS stream (that caused desync with 2+ streams at once due to network
+# contention - see this file's history). Instead, the frontend captures a
+# frame from the <video> the user is already watching (perfectly synced
+# by definition) and sends it as base64 over the WebSocket; api.py drops
+# it into `frame_queue` and it's only decoded here.
 
 def decode_frame(image_b64: str) -> np.ndarray | None:
     try:
@@ -217,23 +217,23 @@ def get_crop(frame: np.ndarray, box) -> np.ndarray | None:
 
 # -- Match check ---------------------------------------------------------------
 
-def matches_any_marca(pred_marca: str, conf_marca: float,
-                      marcas: list[str]) -> tuple[bool, str]:
+def matches_any_brand(pred_brand: str, brand_conf: float,
+                      brands: list[str]) -> tuple[bool, str]:
     """Returns (match, brand) for the first matching brand."""
-    if conf_marca < MIN_CONF_MARCA:
+    if brand_conf < MIN_BRAND_CONF:
         return False, ""
-    for marca in marcas:
-        if pred_marca.lower() == marca.lower():
-            return True, marca
+    for brand in brands:
+        if pred_brand.lower() == brand.lower():
+            return True, brand
     return False, ""
 
 
-# -- Image encoding (todas las imagenes viajan por WebSocket, ninguna se
-#    guarda en disco) -------------------------------------------------------
+# -- Image encoding (all images travel over WebSocket, none are saved
+#    to disk) -------------------------------------------------------
 
 def _encode_image(img: np.ndarray, fmt: str) -> str | None:
-    """Codifica una imagen a base64 para mandarla directo en un evento por
-    WebSocket, sin pasar por disco."""
+    """Encodes an image to base64 to send it directly in a WebSocket
+    event, without touching disk."""
     ok, buf = cv2.imencode(fmt, img)
     return base64.b64encode(buf).decode("ascii") if ok else None
 
@@ -246,16 +246,16 @@ def save_latest_frame(frame: np.ndarray) -> str | None:
 
 # -- Match saving --------------------------------------------------------------
 
-def save_match(frame: np.ndarray, crop: np.ndarray, marca: str,
-               marca_conf: float, label: str, queue=None) -> None:
-    log.info("MATCH ENCONTRADO | marca: %s (%.2f) | stream: %s", marca, marca_conf, label)
+def save_match(frame: np.ndarray, crop: np.ndarray, brand: str,
+               brand_conf: float, label: str, queue=None) -> None:
+    log.info("MATCH FOUND | brand: %s (%.2f) | stream: %s", brand, brand_conf, label)
 
-    stats_db.increment_brand(marca)
+    stats_db.increment_brand(brand)
 
     emit(
         queue, "match",
-        marca=marca,
-        confianza=round(marca_conf, 4),
+        brand=brand,
+        confidence=round(brand_conf, 4),
         stream=label,
         frame_data=_encode_image(frame, IMAGE_FORMAT_FRAME),
         crop_data=_encode_image(crop, IMAGE_FORMAT_CROP),
@@ -264,48 +264,47 @@ def save_match(frame: np.ndarray, crop: np.ndarray, marca: str,
 
 # -- Detected saving -----------------------------------------------------------
 
-def save_detected(crop: np.ndarray, marca: str, marca_conf: float, queue=None) -> None:
+def save_detected(crop: np.ndarray, brand: str, brand_conf: float, queue=None) -> None:
     emit(
         queue, "detected",
-        marca=marca,
-        confianza=round(marca_conf, 4),
+        brand=brand,
+        confidence=round(brand_conf, 4),
         image_data=_encode_image(crop, IMAGE_FORMAT_CROP),
     )
 
 
 def save_discarded(crop: np.ndarray, reason: str, queue=None) -> None:
-    """Descarte antes de clasificar (borroso o duplicado): NO se guarda en
-    disco (con muchos vehiculos por frame, esto llenaba detectados/ de
-    archivos rapidamente y generaba mucho trafico HTTP hacia el frontend
-    para crops que no aportan valor persistido). En cambio, el recorte
-    viaja directo en el evento por WebSocket, codificado en base64, para
-    que el frontend lo siga mostrando en vivo sin necesitar un archivo
-    servido por HTTP."""
+    """Discard before classifying (blurry or duplicate): NOT saved to
+    disk (with many vehicles per frame, this quickly filled detected/
+    with files and generated a lot of HTTP traffic to the frontend for
+    crops that add no persisted value). Instead, the crop travels
+    directly in the WebSocket event, base64-encoded, so the frontend
+    keeps showing it live without needing a file served over HTTP."""
     ok, buf = cv2.imencode(IMAGE_FORMAT_CROP, crop)
     image_data = base64.b64encode(buf).decode("ascii") if ok else None
 
     emit(
         queue, "detected",
-        marca=reason,
-        descartado=reason,
+        brand=reason,
+        discarded=reason,
         image_data=image_data,
     )
 
 
 # -- Main detection loop ---------------------------------------------------------
 #
-# El frontend es quien decide cuando captura un frame (cada
-# DEFAULT_INTERVAL, del <video> que el usuario ya esta viendo) y lo manda
-# por WebSocket; api.py lo deposita en una `frame_queue` COMPARTIDA por
-# todos los jobs activos. Un unico hilo (inference_worker) consume esa
-# cola con los modelos YOLO cargados UNA sola vez, en vez de que cada job
-# cargue su propia copia (antes cada job era su propio proceso con sus
-# propios modelos - con una GPU de VRAM limitada, eso topaba cuantos
-# usuarios podian usar la deteccion a la vez).
+# The frontend decides when to capture a frame (every DEFAULT_INTERVAL,
+# from the <video> the user is already watching) and sends it over
+# WebSocket; api.py drops it into a `frame_queue` SHARED by all active
+# jobs. A single thread (inference_worker) consumes that queue with the
+# YOLO models loaded ONCE, instead of each job loading its own copy
+# (previously each job was its own process with its own models - with a
+# GPU of limited VRAM, that capped how many users could run detection at
+# the same time).
 #
-# El estado de deduplicacion (known_crops/contadores) vive por job_id, no
-# por nombre de stream: asi dos usuarios viendo el mismo stream no
-# comparten memoria de recortes ni contadores entre si.
+# Deduplication state (known_crops/counters) lives per job_id, not per
+# stream name: this way two users watching the same stream don't share
+# crop memory or counters with each other.
 
 _state_lock = threading.Lock()
 _job_states: dict[str, dict] = {}
@@ -316,16 +315,16 @@ def _fresh_state() -> dict:
 
 
 def register_job(job_id: str) -> None:
-    """Llamado al arrancar un job: crea su estado desde cero, para que no
-    arrastre memoria de recortes de un job anterior con el mismo id (no
-    deberia pasar con UUIDs, pero deja el estado limpio explicitamente)."""
+    """Called when a job starts: creates its state from scratch, so it
+    doesn't carry over crop memory from a previous job with the same id
+    (shouldn't happen with UUIDs, but keeps the state explicitly clean)."""
     with _state_lock:
         _job_states[job_id] = _fresh_state()
 
 
 def remove_job(job_id: str) -> None:
-    """Llamado al detener un job: libera su estado. Sin esto, cada sesion
-    de deteccion dejaria una entrada huerfana en memoria para siempre."""
+    """Called when a job stops: frees its state. Without this, every
+    detection session would leave an orphaned entry in memory forever."""
     with _state_lock:
         _job_states.pop(job_id, None)
 
@@ -335,14 +334,15 @@ def _get_job_state(job_id: str) -> dict:
         return _job_states.setdefault(job_id, _fresh_state())
 
 
-def process_frame(job_id: str, label: str, marcas: list[str], image_b64: str,
-                   det_model, cls_marca_model, queue=None) -> None:
-    """Decodifica un frame ya capturado por el frontend y corre deteccion +
-    clasificacion sobre el, actualizando el estado de ESTE job (no del
-    stream: dos jobs en el mismo stream no se pisan entre si)."""
+def process_frame(job_id: str, label: str, brands: list[str], image_b64: str,
+                   det_model, cls_brand_model, queue=None) -> None:
+    """Decodes a frame already captured by the frontend and runs
+    detection + classification on it, updating the state of THIS job
+    (not the stream: two jobs on the same stream don't step on each
+    other)."""
     frame = decode_frame(image_b64)
     if frame is None:
-        log.warning("[%s] Frame recibido invalido, descartado.", label)
+        log.warning("[%s] Received invalid frame, discarded.", label)
         return
 
     state = _get_job_state(job_id)
@@ -354,27 +354,27 @@ def process_frame(job_id: str, label: str, marcas: list[str], image_b64: str,
     boxes = detect_vehicles(frame, det_model, DEFAULT_CONF)
 
     if not boxes:
-        status.info("[%s] Frame %d | sin vehiculos detectados | matches: %d",
+        status.info("[%s] Frame %d | no vehicles detected | matches: %d",
                     label, total_frames, state["total_matches"])
         emit(queue, "status", stream=label, frame=total_frames,
-             detalle="sin_vehiculos", matches=state["total_matches"],
+             detail="no_vehicles", matches=state["total_matches"],
              frame_data=latest_frame_data)
     else:
-        status.info("[%s] Frame %d | %d vehiculo(s) en frame, clasificando... | matches: %d",
+        status.info("[%s] Frame %d | %d vehicle(s) in frame, classifying... | matches: %d",
                     label, total_frames, len(boxes), state["total_matches"])
         emit(queue, "status", stream=label, frame=total_frames,
-             detalle="clasificando", vehiculos=len(boxes), matches=state["total_matches"],
+             detail="classifying", vehicles=len(boxes), matches=state["total_matches"],
              frame_data=latest_frame_data)
 
     for box in boxes:
         crop = get_crop(frame, box)
         if crop is None:
-            status.info("[%s] Frame %d | vehiculo descartado (recorte invalido)",
+            status.info("[%s] Frame %d | vehicle discarded (invalid crop)",
                         label, total_frames)
             continue
 
         if not is_sharp(crop, DEFAULT_MIN_SHARPNESS):
-            status.info("[%s] Frame %d | vehiculo descartado (borroso, varianza < %.1f)",
+            status.info("[%s] Frame %d | vehicle discarded (blurry, variance < %.1f)",
                         label, total_frames, DEFAULT_MIN_SHARPNESS)
             save_discarded(crop, "blurry", queue=queue)
             continue
@@ -402,22 +402,22 @@ def process_frame(job_id: str, label: str, marcas: list[str], image_b64: str,
             known_crops[match_idx]["prepared"] = crop_prepared
             known_crops[match_idx]["box"] = box_xyxy
             known_crops[match_idx]["last_seen"] = time.time()
-            status.info("[%s] Frame %d | vehiculo descartado (recorte duplicado, %s %.3f)",
+            status.info("[%s] Frame %d | vehicle discarded (duplicate crop, %s %.3f)",
                         label, total_frames, reason, score)
             save_discarded(crop, "duplicate", queue=queue)
             continue
 
         known_crops.append({"prepared": crop_prepared, "box": box_xyxy, "last_seen": time.time()})
 
-        pred_marca, conf_marca = classify_crop(crop, cls_marca_model)
+        pred_brand, brand_conf = classify_crop(crop, cls_brand_model)
 
-        matched, marca = matches_any_marca(pred_marca, conf_marca, marcas)
+        matched, brand = matches_any_brand(pred_brand, brand_conf, brands)
         if matched:
             state["total_matches"] += 1
-            save_match(frame, crop, marca, conf_marca, label, queue=queue)
+            save_match(frame, crop, brand, brand_conf, label, queue=queue)
         else:
-            save_detected(crop, pred_marca, conf_marca, queue=queue)
-            log.info("Detectado: %s (%.2f)", pred_marca, conf_marca)
+            save_detected(crop, pred_brand, brand_conf, queue=queue)
+            log.info("Detected: %s (%.2f)", pred_brand, brand_conf)
 
     # Forget crops that have gone too long without reappearing, so
     # we don't compare against an ever-growing history.
@@ -428,11 +428,11 @@ def process_frame(job_id: str, label: str, marcas: list[str], image_b64: str,
     ]
 
 
-def inference_worker(frame_queue, det_model, cls_marca_model,
+def inference_worker(frame_queue, det_model, cls_brand_model,
                       stop_event: threading.Event) -> None:
-    """Unico consumidor de `frame_queue`, compartido por todos los jobs
-    activos. Vive durante toda la vida del servidor (se arranca una vez
-    en el lifespan de FastAPI), con los modelos cargados una sola vez."""
+    """Sole consumer of `frame_queue`, shared by all active jobs. Lives
+    for the entire lifetime of the server (started once in FastAPI's
+    lifespan), with the models loaded only once."""
     while not stop_event.is_set():
         try:
             item = frame_queue.get(timeout=1)
@@ -442,9 +442,9 @@ def inference_worker(frame_queue, det_model, cls_marca_model,
         process_frame(
             job_id=item["job_id"],
             label=item["label"],
-            marcas=item["marcas"],
+            brands=item["brands"],
             image_b64=item["image_b64"],
             det_model=det_model,
-            cls_marca_model=cls_marca_model,
+            cls_brand_model=cls_brand_model,
             queue=item["queue"],
         )

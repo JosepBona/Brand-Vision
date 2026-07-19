@@ -5,22 +5,22 @@ import { AlertTriangle, Loader2 } from "lucide-react"
 import type { StreamPlayerProps } from "@/types/brand-vision-page"
 
 /**
- * Reproduce un stream HLS (.m3u8) directamente en el navegador.
+ * Plays an HLS (.m3u8) stream directly in the browser.
  *
- * OJO: el <video> pide los segmentos directamente al servidor origen
- * (Nevada DOT), asi que si ese servidor no manda headers CORS permisivos,
- * esto fallara con un error de red / manifestParsingError, NO con un
- * error visible de "CORS" explicito (hls.js lo reporta como networkError).
- * Si ves errores repetidos aqui, lo mas probable es CORS y hace falta un
- * proxy en el backend.
+ * HEADS UP: the <video> requests segments directly from the origin server
+ * (Nevada DOT), so if that server doesn't send permissive CORS headers,
+ * this will fail with a network error / manifestParsingError, NOT with a
+ * visible explicit "CORS" error (hls.js reports it as networkError).
+ * If you see repeated errors here, it's most likely CORS and a proxy is
+ * needed in the backend.
  *
- * Ademas de reproducir, este componente es quien captura los frames que
- * se analizan: en vez de que el backend se conecte el mismo al stream
- * (lo que causaba desincronizacion con varios streams a la vez por
- * contencion de red - ver historial de detector.py), se recorta un
- * frame de este mismo <video> cada `captureIntervalSeconds` via
- * <canvas> y se manda al backend. Es, por definicion, el mismo frame que
- * el usuario esta viendo.
+ * Besides playing, this component is also what captures the frames that
+ * get analyzed: instead of the backend connecting to the stream itself
+ * (which caused desync across multiple simultaneous streams due to
+ * network contention - see detector.py's history), a frame is cropped
+ * from this same <video> every `captureIntervalSeconds` via <canvas> and
+ * sent to the backend. It is, by definition, the same frame the user
+ * is watching.
  */
 export function StreamPlayer({
   url,
@@ -37,9 +37,9 @@ export function StreamPlayer({
   const [errorDetail, setErrorDetail] = useState<string>("")
   const [loadDurationMs, setLoadDurationMs] = useState<number | null>(null)
 
-  // Ref en vez de meter onFirstFrame en las deps del efecto de abajo: el
-  // padre suele pasar una arrow function nueva en cada render, y si fuera
-  // dependencia el efecto reconectaria el stream entero cada vez.
+  // Ref instead of putting onFirstFrame in the effect's deps below: the
+  // parent usually passes a new arrow function on every render, and if it
+  // were a dependency the effect would reconnect the whole stream every time.
   const onFirstFrameRef = useRef(onFirstFrame)
   useEffect(() => {
     onFirstFrameRef.current = onFirstFrame
@@ -53,10 +53,10 @@ export function StreamPlayer({
     setErrorDetail("")
     setLoadDurationMs(null)
 
-    // t0: justo antes de pedir el manifest/adjuntar al <video>. Medimos
-    // desde aqui hasta que el navegador REALMENTE pinta el primer frame
-    // (no cuando hls.js dice "manifest parseado", que solo significa que
-    // conoce la lista de segmentos, no que haya imagen en pantalla).
+    // t0: right before requesting the manifest/attaching to the <video>.
+    // We measure from here until the browser REALLY paints the first frame
+    // (not when hls.js says "manifest parsed", which only means it knows
+    // the segment list, not that there's an image on screen).
     const loadStart = performance.now()
     let measured = false
 
@@ -65,34 +65,35 @@ export function StreamPlayer({
       measured = true
       const elapsed = Math.round(performance.now() - loadStart)
       setLoadDurationMs(elapsed)
-      console.info(`[StreamPlayer] Tiempo de carga hasta "${label}": ${elapsed}ms (${url})`)
+      console.info(`[StreamPlayer] Load time until "${label}": ${elapsed}ms (${url})`)
       onFirstFrameRef.current?.(elapsed)
     }
 
-    // "playing" es el evento nativo del <video> que se dispara cuando de
-    // verdad arranca la reproduccion (no "loadedmetadata"/"canplay", que
-    // pueden dispararse antes de que haya un frame visible en pantalla).
+    // "playing" is the native <video> event that fires when playback
+    // really starts (not "loadedmetadata"/"canplay", which can fire
+    // before there's a visible frame on screen).
     video.addEventListener("playing", () => measureOnce("playing"), { once: true })
 
-    // requestVideoFrameCallback (si el navegador lo soporta) es mas preciso
-    // todavia: se llama justo cuando se presenta un frame decodificado para
-    // composicion, asi que es la medida mas cercana a "esto ya se ve".
+    // requestVideoFrameCallback (if the browser supports it) is even
+    // more precise: it's called right when a decoded frame is presented
+    // for composition, so it's the measurement closest to "this is
+    // actually visible".
     const rvfcVideo = video as HTMLVideoElement & {
       requestVideoFrameCallback?: (cb: () => void) => number
     }
-    rvfcVideo.requestVideoFrameCallback?.(() => measureOnce("first frame renderizado"))
+    rvfcVideo.requestVideoFrameCallback?.(() => measureOnce("first frame rendered"))
 
     const tryPlay = () => {
       video.play().catch(() => {
-        // autoplay bloqueado por el navegador pese a estar en muted;
-        // el usuario puede darle play manualmente, no es un error real
+        // autoplay blocked by the browser despite being muted; the user
+        // can hit play manually, this isn't a real error
       })
     }
 
-    // Grabacion local (p.ej. /test-recording.mp4, servida por el propio
-    // frontend): no es HLS, se reproduce directo sin hls.js. En loop para
-    // poder probar la deteccion de forma continua sin depender de un
-    // stream en vivo real.
+    // Local recording (e.g. /test-recording.mp4, served by the frontend
+    // itself): not HLS, plays directly without hls.js. Looped so
+    // detection can be tested continuously without depending on a real
+    // live stream.
     const isLocalRecording = /\.mp4(\?|$)/i.test(url)
     if (isLocalRecording) {
       video.loop = true
@@ -103,7 +104,7 @@ export function StreamPlayer({
       }
       const onError = () => {
         setStatus("error")
-        setErrorDetail("No se pudo cargar la grabacion de prueba")
+        setErrorDetail("Could not load the test recording")
       }
       video.addEventListener("loadedmetadata", onLoaded)
       video.addEventListener("error", onError)
@@ -114,11 +115,11 @@ export function StreamPlayer({
       }
     }
 
-    // hls.js primero: es mas fiable que la deteccion nativa via
-    // canPlayType, que en Edge/Windows a veces reporta soporte HLS
-    // parcial (Windows Media Foundation) y falla de forma inconsistente.
-    // La rama nativa queda solo para Safari real, donde Hls.isSupported()
-    // es false porque el navegador ya lo resuelve el solo.
+    // hls.js first: it's more reliable than native detection via
+    // canPlayType, which on Edge/Windows sometimes reports partial HLS
+    // support (Windows Media Foundation) and fails inconsistently. The
+    // native branch is only for real Safari, where Hls.isSupported() is
+    // false because the browser already handles it natively.
     if (Hls.isSupported()) {
       const hls = new Hls({
         manifestLoadingMaxRetry: 2,
@@ -134,7 +135,7 @@ export function StreamPlayer({
         setStatus("error")
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
           setErrorDetail(
-            `Error de red (${data.details}) — probablemente CORS bloqueando el servidor origen`
+            `Network error (${data.details}) — likely CORS blocking the origin server`
           )
         } else {
           setErrorDetail(`${data.type}: ${data.details}`)
@@ -155,7 +156,7 @@ export function StreamPlayer({
       }
       const onError = () => {
         setStatus("error")
-        setErrorDetail("El navegador no pudo cargar el manifest HLS")
+        setErrorDetail("The browser couldn't load the HLS manifest")
       }
       video.addEventListener("loadedmetadata", onLoaded)
       video.addEventListener("error", onError)
@@ -166,14 +167,14 @@ export function StreamPlayer({
     }
 
     setStatus("error")
-    setErrorDetail("Este navegador no soporta HLS ni MSE")
+    setErrorDetail("This browser doesn't support HLS or MSE")
   }, [url])
 
-  // Captura periodica: solo mientras el <video> esta realmente
-  // reproduciendo (no durante "loading"/"error", donde no hay nada valido
-  // que recortar). Un <canvas> del tamaño real del video (no del <video>
-  // en pantalla, que puede estar escalado por CSS) evita perder
-  // resolucion en el recorte.
+  // Periodic capture: only while the <video> is actually playing (not
+  // during "loading"/"error", where there's nothing valid to crop). A
+  // <canvas> sized to the video's real resolution (not the on-screen
+  // <video>, which can be scaled by CSS) avoids losing resolution in
+  // the crop.
   useEffect(() => {
     if (status !== "playing" || !onFrameCapture) return
     const video = videoRef.current
@@ -193,8 +194,8 @@ export function StreamPlayer({
       onFrameCapture(canvas.toDataURL("image/jpeg", 0.85))
     }
 
-    // Primera captura casi inmediata (el video ya esta reproduciendo),
-    // luego cada intervalo - no esperar al primer tick del setInterval.
+    // First capture almost immediately (the video is already playing),
+    // then every interval - don't wait for setInterval's first tick.
     captureFrame()
     const id = window.setInterval(captureFrame, intervalMs)
     return () => window.clearInterval(id)
@@ -215,13 +216,13 @@ export function StreamPlayer({
           {status === "loading" ? (
             <>
               <Loader2 className="h-6 w-6 animate-spin" />
-              <p className="text-sm">Conectando al stream…</p>
+              <p className="text-sm">Connecting to stream…</p>
             </>
           ) : (
             <>
               <AlertTriangle className="h-6 w-6 text-destructive" />
               <p className="max-w-xs px-4 text-center text-sm text-destructive">
-                {errorDetail || "No se pudo reproducir el stream"}
+                {errorDetail || "Could not play the stream"}
               </p>
             </>
           )}

@@ -8,10 +8,10 @@ import type {
   LastCapturePanelProps,
 } from "@/types/brand-vision-page"
 
-// key={frame} en el sitio de uso fuerza un remount completo por cada
-// captura nueva, asi loaded siempre arranca en false de forma limpia (sin
-// depender de comparar el frame anterior via ref/efecto, que podria pisarse
-// con la propia carga de la imagen si esta es muy rapida).
+// key={frame} at the call site forces a full remount on every new capture,
+// so loaded always starts cleanly at false (instead of depending on
+// comparing the previous frame via ref/effect, which could race with the
+// image load itself if it's very fast).
 function CaptureImage({ src, alt }: CaptureImageProps) {
   const [loaded, setLoaded] = useState(false)
   return (
@@ -35,16 +35,16 @@ function CaptureImage({ src, alt }: CaptureImageProps) {
 }
 
 export function LastCapturePanel({ events }: LastCapturePanelProps) {
-  // Captura mas reciente enviada por el backend, tenga o no vehiculos: a
-  // diferencia de lastMatch (solo eventos "match"), esto mira cualquier
-  // evento con frame_data (incluye los "status" de cada ciclo de captura).
+  // Most recent capture sent by the backend, whether or not it has
+  // vehicles: unlike lastMatch (only "match" events), this looks at any
+  // event with frame_data (includes the "status" of each capture cycle).
   const latestCapture = events.find((e) => e.frame_data)
 
-  // TODOS los vehiculos recortados (match + detected) del ultimo ciclo de
-  // captura: los eventos van del mas nuevo al mas viejo, y cada ciclo
-  // arranca con un "status"/"capture_failed", asi que lo que aparece antes
-  // del primer status/capture_failed son los recortes de la ultima
-  // captura, no del historial completo de la sesion.
+  // ALL cropped vehicles (match + detected) from the last capture cycle:
+  // events go from newest to oldest, and each cycle starts with a
+  // "status"/"capture_failed", so whatever appears before the first
+  // status/capture_failed are the crops from the latest capture, not
+  // the full session history.
   const latestCycleDetectedCrops = useMemo(() => {
     const result: DetectionEvent[] = []
     for (const e of events) {
@@ -64,11 +64,11 @@ export function LastCapturePanel({ events }: LastCapturePanelProps) {
           <CaptureImage
             key={latestCapture.frame}
             src={`data:image/jpeg;base64,${latestCapture.frame_data}`}
-            alt="Ultima captura del stream"
+            alt="Latest stream capture"
           />
 
-          {/* Recortes "detected" (no llegaron a match) de ESTE mismo
-              ciclo de captura, pegado justo debajo de la imagen. */}
+          {/* "detected" crops (didn't reach match) from this same capture
+              cycle, placed right below the image. */}
           <div className="border-t px-3 py-2">
             <p className="mb-2 text-xs font-medium text-muted-foreground">
               Detected crops
@@ -94,13 +94,13 @@ export function LastCapturePanel({ events }: LastCapturePanelProps) {
                             ? `data:image/png;base64,${d.image_data}`
                             : undefined
                       }
-                      alt={d.marca ?? "Detected vehicle"}
+                      alt={d.brand ?? "Detected vehicle"}
                       className="h-20 w-full object-cover 3xl:h-32 4xl:h-40"
                     />
                     <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-0.5 text-center text-[10px] text-white">
-                      <span className="capitalize">{d.marca ?? "—"}</span>
-                      {d.confianza != null && (
-                        <span> · {(d.confianza * 100).toFixed(0)}%</span>
+                      <span className="capitalize">{d.brand ?? "—"}</span>
+                      {d.confidence != null && (
+                        <span> · {(d.confidence * 100).toFixed(0)}%</span>
                       )}
                     </div>
                   </div>

@@ -43,11 +43,11 @@ from pydantic import BaseModel
 import stats_db
 import detector
 from detector import (
-    DEFAULT_CLS_MARCA,
+    DEFAULT_CLS_BRAND,
     DEFAULT_DET_MODEL,
     DEFAULT_INTERVAL,
-    MARCAS_DISPONIBLES,
-    STREAMS_DISPONIBLES,
+    AVAILABLE_BRANDS,
+    AVAILABLE_STREAMS,
     inference_worker,
     load_model,
     setup_logging,
@@ -56,9 +56,9 @@ from detector import (
 log = logging.getLogger("api")
 logging.basicConfig(level=logging.INFO)
 
-# Cola compartida por TODOS los jobs activos: cada WebSocket empuja aqui
-# los frames que le manda su frontend, el (unico) hilo de inferencia los
-# consume con los modelos ya cargados.
+# Queue shared by ALL active jobs: each WebSocket pushes here the frames
+# sent by its frontend, and the (single) inference thread consumes them
+# with the models already loaded.
 frame_queue: "pyqueue.Queue" = pyqueue.Queue()
 inference_stop_event = threading.Event()
 inference_thread: threading.Thread | None = None
@@ -73,16 +73,16 @@ async def lifespan(app: FastAPI):
     setup_logging(output_dir / "search.log")
     stats_db.init_db()
 
-    # Los modelos se cargan UNA sola vez aqui, no por job. Un solo hilo de
-    # inferencia los usa durante toda la vida del servidor.
-    log.info("Cargando modelos YOLO (una sola vez, compartidos por todos los jobs)...")
+    # The models are loaded ONCE here, not per job. A single inference
+    # thread uses them for the entire lifetime of the server.
+    log.info("Loading YOLO models (once, shared by all jobs)...")
     det_model       = load_model(DEFAULT_DET_MODEL)
-    cls_marca_model = load_model(DEFAULT_CLS_MARCA)
+    cls_brand_model = load_model(DEFAULT_CLS_BRAND)
 
     global inference_thread
     inference_thread = threading.Thread(
         target=inference_worker,
-        args=(frame_queue, det_model, cls_marca_model, inference_stop_event),
+        args=(frame_queue, det_model, cls_brand_model, inference_stop_event),
         name="inference-worker",
         daemon=True,
     )
@@ -119,12 +119,12 @@ app.add_middleware(
 )
 
 jobs: Dict[str, dict] = {}
-# job_id -> {"queue", "sockets", "poller_task", "stream", "marcas"}
+# job_id -> {"queue", "sockets", "poller_task", "stream", "brands"}
 
 
 class StartPayload(BaseModel):
     stream: str
-    marcas: list[str]
+    brands: list[str]
 
 
 class StopPayload(BaseModel):
@@ -135,9 +135,9 @@ class StopPayload(BaseModel):
 async def get_options():
     """Used to populate the stream and brand <select> elements in React."""
     return {
-        "streams": list(STREAMS_DISPONIBLES.keys()),
-        "stream_urls": STREAMS_DISPONIBLES,
-        "marcas": MARCAS_DISPONIBLES,
+        "streams": list(AVAILABLE_STREAMS.keys()),
+        "stream_urls": AVAILABLE_STREAMS,
+        "brands": AVAILABLE_BRANDS,
         "capture_interval": DEFAULT_INTERVAL,
     }
 
@@ -156,8 +156,8 @@ async def list_jobs():
     return {
         job_id: {
             "stream": job["stream"],
-            "marcas": job["marcas"],
-            "clientes_conectados": len(job["sockets"]),
+            "brands": job["brands"],
+            "connected_clients": len(job["sockets"]),
         }
         for job_id, job in jobs.items()
     }
@@ -187,12 +187,12 @@ async def poll_queue(job_id: str, event_queue: "pyqueue.Queue") -> None:
 
 @app.post("/start")
 async def start_detection(payload: StartPayload):
-    if payload.stream not in STREAMS_DISPONIBLES:
+    if payload.stream not in AVAILABLE_STREAMS:
         raise HTTPException(400, f"Unknown stream: {payload.stream}")
 
-    marcas_invalidas = set(payload.marcas) - set(MARCAS_DISPONIBLES)
-    if marcas_invalidas:
-        raise HTTPException(400, f"Unknown brand(s): {marcas_invalidas}")
+    invalid_brands = set(payload.brands) - set(AVAILABLE_BRANDS)
+    if invalid_brands:
+        raise HTTPException(400, f"Unknown brand(s): {invalid_brands}")
 
     job_id = str(uuid.uuid4())
     event_queue: "pyqueue.Queue" = pyqueue.Queue()
@@ -205,12 +205,12 @@ async def start_detection(payload: StartPayload):
         "sockets": [],
         "poller_task": poller_task,
         "stream": payload.stream,
-        "marcas": payload.marcas,
+        "brands": payload.brands,
     }
 
-    detector.emit(event_queue, "started", stream=payload.stream, marcas=payload.marcas)
+    detector.emit(event_queue, "started", stream=payload.stream, brands=payload.brands)
 
-    return {"job_id": job_id, "status": "started", "stream": payload.stream, "marcas": payload.marcas}
+    return {"job_id": job_id, "status": "started", "stream": payload.stream, "brands": payload.brands}
 
 
 @app.post("/stop")
@@ -260,12 +260,12 @@ async def ws_endpoint(websocket: WebSocket, job_id: str):
     job["sockets"].append(websocket)
     try:
         while True:
-            # El frontend manda aqui cada frame que captura del <video>
-            # ({"type": "frame", "image_data": "<jpeg en base64>"}), en vez
-            # de que el backend se conecte el mismo al stream en directo.
-            # Se deposita en la cola COMPARTIDA de inferencia, etiquetado
-            # con este job_id para que su estado no se mezcle con el de
-            # otros jobs (incluso si ven el mismo stream).
+            # The frontend sends here every frame it captures from the
+            # <video> ({"type": "frame", "image_data": "<base64 jpeg>"}),
+            # instead of the backend connecting itself to the live
+            # stream. It's dropped into the SHARED inference queue,
+            # tagged with this job_id so its state doesn't mix with
+            # other jobs' (even if they're watching the same stream).
             message = await websocket.receive_text()
             try:
                 data = json.loads(message)
@@ -277,7 +277,7 @@ async def ws_endpoint(websocket: WebSocket, job_id: str):
                     frame_queue.put({
                         "job_id": job_id,
                         "label": job["stream"],
-                        "marcas": job["marcas"],
+                        "brands": job["brands"],
                         "image_b64": image_data,
                         "queue": job["queue"],
                     })
