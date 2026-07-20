@@ -7,37 +7,19 @@ Real-time vehicle brand detection from public traffic camera streams (Nevada DOT
 
 ## 1. General architecture
 
-```
-┌─────────────┐   HLS (.m3u8)   ┌──────────────────┐
-│ DOT camera  │ ───────────────▶│  <video> (React) │
-│  (Nevada)   │                 └────────┬─────────┘
-└─────────────┘                          │ captures a frame (canvas)
-                                          │ every DEFAULT_INTERVAL sec
-                                          ▼
-                              WebSocket /ws/{job_id}
-                                          │
-                                          ▼
-                          ┌───────────────────────────┐
-                          │   FastAPI (backend/api.py) │
-                          │  frame_queue (shared)       │
-                          └───────────┬───────────────┘
-                                      ▼
-                     inference_worker (1 thread, detector.py)
-                          │                    │
-                   YOLO vehicle detection      │
-                          │                    ▼
-                          ▼          brand classification
-                   vehicle crop        (best.engine)
-                     (yolo26n.engine)
-                          │
-                          ▼
-              "match" event → job's queue.Queue
-                          │
-                          ▼
-              WebSocket → frontend (table + charts)
-                          │
-                          ▼
-                 SQLite (resultados/stats.db)
+```mermaid
+flowchart TD
+    A["DOT camera (Nevada)"] -- "HLS (.m3u8)" --> B["&lt;video&gt; (React)"]
+    B -- "captures a frame (canvas)<br/>every DEFAULT_INTERVAL sec" --> C["WebSocket /ws/{job_id}"]
+    C --> D["FastAPI (backend/api.py)<br/>frame_queue (shared)"]
+    D --> E["inference_worker (1 thread, detector.py)"]
+    E --> F["YOLO vehicle detection"]
+    F --> G["vehicle crop<br/>(yolo26n.engine)"]
+    E --> H["brand classification<br/>(best.engine)"]
+    G --> I["'match' event → job's queue.Queue"]
+    H --> I
+    I --> J["WebSocket → frontend (table + charts)"]
+    J --> K["SQLite (resultados/stats.db)"]
 ```
 
 **Key design decision**: the backend **doesn't connect directly to the cameras**. The frontend is already playing the HLS stream in a `<video>` element; it captures a frame via `<canvas>` and uploads it over the same WebSocket it uses to receive events. This avoids opening a second network connection to the camera origin per user.
