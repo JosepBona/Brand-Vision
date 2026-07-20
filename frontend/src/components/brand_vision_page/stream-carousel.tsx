@@ -92,6 +92,7 @@ export function StreamCarousel({
               size="icon-xs"
               onClick={() => scrollStreams(-1)}
               disabled={streamEdges.atStart}
+              aria-label="Scroll streams left"
               className="rounded-full border-2 border-white dark:border-white"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -101,6 +102,7 @@ export function StreamCarousel({
               size="icon-xs"
               onClick={() => scrollStreams(1)}
               disabled={streamEdges.atEnd}
+              aria-label="Scroll streams right"
               className="rounded-full border-2 border-white dark:border-white"
             >
               <ChevronRight className="h-4 w-4" />

@@ -162,6 +162,7 @@ export function DetectionHistoryTable({ matches }: DetectionHistoryTableProps) {
               size="icon-xs"
               onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
               disabled={safeHistoryPage === 0}
+              aria-label="Previous page"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -172,6 +173,7 @@ export function DetectionHistoryTable({ matches }: DetectionHistoryTableProps) {
                 setHistoryPage((p) => Math.min(historyPageCount - 1, p + 1))
               }
               disabled={safeHistoryPage >= historyPageCount - 1}
+              aria-label="Next page"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
