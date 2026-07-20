@@ -6,21 +6,8 @@ Real-time vehicle brand detection from public traffic camera streams (Nevada DOT
 - **`backend/`** — FastAPI service that detects vehicle brands from live traffic camera streams using YOLO + a custom brand classifier, with WebSocket live events and SQLite stats.
 
 ## 1. General architecture
+<img width="1991" height="790" alt="architecture" src="https://github.com/user-attachments/assets/bc00890c-7996-49f9-b1f0-e64357942236" />
 
-```mermaid
-flowchart TD
-    A["DOT camera (Nevada)"] -- "HLS (.m3u8)" --> B["&lt;video&gt; (React)"]
-    B -- "captures a frame (canvas)<br/>every DEFAULT_INTERVAL sec" --> C["WebSocket /ws/{job_id}"]
-    C --> D["FastAPI (backend/api.py)<br/>frame_queue (shared)"]
-    D --> E["inference_worker (1 thread, detector.py)"]
-    E --> F["YOLO vehicle detection"]
-    F --> G["vehicle crop<br/>(yolo26n.engine)"]
-    E --> H["brand classification<br/>(best.engine)"]
-    G --> I["'match' event → job's queue.Queue"]
-    H --> I
-    I --> J["WebSocket → frontend (table + charts)"]
-    J --> K["SQLite (resultados/stats.db)"]
-```
 
 **Key design decision**: the backend **doesn't connect directly to the cameras**. The frontend is already playing the HLS stream in a `<video>` element; it captures a frame via `<canvas>` and uploads it over the same WebSocket it uses to receive events. This avoids opening a second network connection to the camera origin per user.
 
