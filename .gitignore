@@ -30,6 +30,11 @@ backend/detectados
 backend/resultados
 backend/runs
 
+# TensorRT engines: compiled for the exact GPU/driver/CUDA version that
+# built them, not portable across machines - regenerate locally with
+# model.export(format="engine", device=0), see README.md
+*.engine
+
 # Editor
 .vscode/*
 !.vscode/extensions.json

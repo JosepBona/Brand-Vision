@@ -76,8 +76,8 @@ async def lifespan(app: FastAPI):
     # The models are loaded ONCE here, not per job. A single inference
     # thread uses them for the entire lifetime of the server.
     log.info("Loading YOLO models (once, shared by all jobs)...")
-    det_model       = load_model(DEFAULT_DET_MODEL)
-    cls_brand_model = load_model(DEFAULT_CLS_BRAND)
+    det_model       = load_model(DEFAULT_DET_MODEL, task="detect")
+    cls_brand_model = load_model(DEFAULT_CLS_BRAND, task="classify")
 
     global inference_thread
     inference_thread = threading.Thread(
@@ -120,6 +120,8 @@ app.add_middleware(
 
 jobs: Dict[str, dict] = {}
 # job_id -> {"queue", "sockets", "poller_task", "stream", "brands"}
+
+MAX_CONCURRENT_STREAMS = 10
 
 
 class StartPayload(BaseModel):
@@ -193,6 +195,9 @@ async def start_detection(payload: StartPayload):
     invalid_brands = set(payload.brands) - set(AVAILABLE_BRANDS)
     if invalid_brands:
         raise HTTPException(400, f"Unknown brand(s): {invalid_brands}")
+
+    if len(jobs) >= MAX_CONCURRENT_STREAMS:
+        raise HTTPException(429, f"Maximum concurrent streams ({MAX_CONCURRENT_STREAMS}) reached")
 
     job_id = str(uuid.uuid4())
     event_queue: "pyqueue.Queue" = pyqueue.Queue()

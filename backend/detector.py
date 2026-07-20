@@ -14,8 +14,8 @@ import stats_db
 
 DEFAULT_INTERVAL    = 5
 DEFAULT_CONF        = 0.25
-DEFAULT_DET_MODEL   = "yolo26n.pt"
-DEFAULT_CLS_BRAND   = "best.pt"
+DEFAULT_DET_MODEL   = "yolo26n.engine"
+DEFAULT_CLS_BRAND   = "best.engine"
 IMAGE_FORMAT_FRAME  = ".jpg"
 IMAGE_FORMAT_CROP   = ".png"
 JPEG_QUALITY        = 90
@@ -36,7 +36,7 @@ SSIM_CROP_SIZE      = 240
 # (~0.2) even though it's literally the same vehicle in the same frame.
 CROP_IOU_THRESHOLD  = 0.5
 MIN_BRAND_CONF      = 0
-DEFAULT_MIN_SHARPNESS = 6
+DEFAULT_MIN_SHARPNESS = 4
 VEHICLE_CLASSES     = {2: "car"}
 CROP_MEMORY_SECONDS = 120
 
@@ -171,16 +171,23 @@ def is_sharp(crop: np.ndarray, min_sharpness: float) -> bool:
 
 # -- YOLO ----------------------------------------------------------------------
 
-def load_model(path: str):
+def load_model(path: str, task: str | None = None):
     try:
         from ultralytics import YOLO
         import torch
     except ImportError:
         raise SystemExit("ultralytics not installed.")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = YOLO(path)
-    model.to(device)
-    log.info("Model loaded: %s (device=%s)", path, device)
+    # Exported formats like .mnn can't auto-detect the task from the file,
+    # unlike .pt checkpoints which embed it.
+    model = YOLO(path, task=task)
+    if path.endswith(".pt"):
+        # Exported formats (e.g. .mnn) run their own backend and don't
+        # support .to(device); only plain PyTorch checkpoints do.
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        log.info("Model loaded: %s (device=%s)", path, device)
+    else:
+        log.info("Model loaded: %s", path)
     return model
 
 

@@ -186,12 +186,18 @@ export function useVehicleDetection() {
         // Backend unreachable (down, network cut off, etc.): without this
         // catch the rejected fetch left the button stuck on "Starting..."
         // forever, since whoever calls start() doesn't await its promise.
-        setErrorMessage("Backend is unreachable right now.");
+        setErrorMessage("vehicle detection isn't available right now.");
         setStatus("error");
         return;
       }
 
       if (!res.ok) {
+        if (res.status === 429) {
+          setErrorMessage("Currently there are too many users using the detection, please try again later.");
+          setStatus("error");
+          return;
+        }
+
         // The backend sends the detail in {"detail": "..."} (FastAPI/
         // HTTPException convention) - e.g. "stream already in use by
         // another user" (409). If there's no readable body, falls back
