@@ -1,4 +1,4 @@
-import { CarIcon, BookOpenIcon, DownloadIcon } from "lucide-react"
+import { CarIcon, DownloadIcon } from "lucide-react"
 import linkedin_logo from "@/assets/linkeding-logo.png"
 
 // lucide-react doesn't include third-party brand logos (same thing
@@ -19,14 +19,6 @@ export const data = {
       url: "/",
       icon: (
         <CarIcon
-        />
-      ),
-    },
-    {
-      name: "Documentation",
-      url: "#",
-      icon: (
-        <BookOpenIcon
         />
       ),
     },
