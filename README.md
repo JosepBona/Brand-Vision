@@ -24,6 +24,8 @@ flowchart TD
 
 **Key design decision**: the backend **doesn't connect directly to the cameras**. The frontend is already playing the HLS stream in a `<video>` element; it captures a frame via `<canvas>` and uploads it over the same WebSocket it uses to receive events. This avoids opening a second network connection to the camera origin per user.
 
+This isn't just an optimization — the backend used to open its own OpenCV (`VideoCapture`) connection to each camera's HLS stream, which caused connection failures and sync drift once 2+ streams ran concurrently (network contention reconnecting to the same DOT origin). Moving frame capture to the browser removed that cap entirely: the backend no longer touches the camera network path at all, so concurrent streams no longer compete with each other over the same upstream connection.
+
 The YOLO models are loaded **once** at process startup and shared by a single inference thread (`inference_worker`) across all active jobs — there used to be one process per job, which capped how many users could fit based on available VRAM.
 
 ## 2. Backend (`backend/`)
