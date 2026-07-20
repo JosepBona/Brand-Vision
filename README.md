@@ -99,10 +99,13 @@ Paginates an array that's already fully loaded in memory (`match` events accumul
 ```bash
 # Backend
 cd backend
+python -m venv venv
+./venv/Scripts/python.exe -m pip install -r requirements.txt
 ./venv/Scripts/python.exe -m uvicorn api:app --reload --host 0.0.0.0 --port 8000
 
 # Frontend
 cd frontend
+npm install
 npm run dev
 ```
 
