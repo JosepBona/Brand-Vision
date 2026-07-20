@@ -13,6 +13,8 @@ Real-time vehicle brand detection from public traffic camera streams (Nevada DOT
 
 This isn't just an optimization — the backend used to open its own OpenCV (`VideoCapture`) connection to each camera's HLS stream, which caused connection failures and sync drift once 2+ streams ran concurrently (network contention reconnecting to the same DOT origin). Moving frame capture to the browser removed that cap entirely: the backend no longer touches the camera network path at all, so concurrent streams no longer compete with each other over the same upstream connection.
 
+There's a second reason this matters beyond raw contention: Nevada511 (the DOT's stream provider) rate-limits/blocks repeated connections from the same IP. A backend opening several HLS connections to the same origin from one server IP would eventually get throttled or blocked outright, capping how many streams could ever run concurrently regardless of local resources. Since each user's own browser opens its own HLS connection from its own IP, this limitation doesn't apply to the current design at all.
+
 The YOLO models are loaded **once** at process startup and shared by a single inference thread (`inference_worker`) across all active jobs — there used to be one process per job, which capped how many users could fit based on available VRAM.
 
 ## 2. Backend (`backend/`)
