@@ -179,8 +179,13 @@ export function VehicleBrandDetector() {
 
         {/* Right column: spans the full height of the dashboard. Contains two mini-charts (recharts)*/}
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 3xl:gap-5 3xl:p-5">
-          <HighConfidenceChart matches={matches} topBrands={brandStats.top} />
-          <TopBrandsRadarChart topBrands={brandStats.top} />
+          {/* Charts are hidden below lg: not enough width on mobile/tablet
+              to render them meaningfully, and the right column collapses
+              below the main content there anyway. */}
+          <div className="hidden lg:contents">
+            <HighConfidenceChart matches={matches} topBrands={brandStats.top} />
+            <TopBrandsRadarChart topBrands={brandStats.top} />
+          </div>
 
           {/* Latest backend capture, below the sidebar, taking up the
               rest of the available height. */}
