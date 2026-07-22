@@ -148,7 +148,7 @@ export function HomePage() {
               text={["Hello, I'm Josep Bona"]}
               typingSpeed={75}
               pauseDuration={10500}
-
+            
               cursorCharacter=""
               deletingSpeed={50}
               cursorBlinkDuration={0.5}
@@ -296,7 +296,7 @@ export function HomePage() {
                         <div className="flex flex-col gap-2 p-5 pb-6">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             {p.tags.map((tag) => (
-                              <Badge key={tag} variant="outline">
+                              <Badge key={tag} variant="secondary">
                                 {tag}
                               </Badge>
                             ))}
@@ -305,8 +305,8 @@ export function HomePage() {
                             {p.name}
                           </h3>
                           <p
-                            className="mb-2 text-sm font-medium text-purple-200"
-                            
+                            className="mb-2 text-sm font-medium"
+                            style={{ color: "oklch(0.78 0.15 255)" }}
                           >
                             {p.description}
                           </p>
@@ -316,7 +316,7 @@ export function HomePage() {
                                 key={feature}
                                 className="flex items-center gap-2 text-xs text-muted-foreground"
                               >
-                                <CheckIcon className="size-3.5 shrink-0 text-purple-300" />
+                                <CheckIcon className="size-3.5 shrink-0 text-primary" />
                                 {feature}
                               </li>
                             ))}
@@ -326,8 +326,7 @@ export function HomePage() {
                               nativeButton={false}
                               className="flex-1 rounded-md border-none text-white"
                               style={{
-                                backgroundImage:
-                                  "linear-gradient(oklch(0.35 0.3 322))",
+                                backgroundImage: "var(--gradient-teal-blue)",
                               }}
                               render={
                                 <a
@@ -372,7 +371,7 @@ export function HomePage() {
                 aria-label={`Go to slide ${i + 1}`}
                 onClick={() => api?.scrollTo(i)}
                 className={`h-1.5 rounded-full transition-all ${
-                  i === index ? "w-6 bg-gray-500" : "w-1.5 bg-foreground/30"
+                  i === index ? "w-6 bg-primary" : "w-1.5 bg-foreground/30"
                 }`}
               />
             ))}
