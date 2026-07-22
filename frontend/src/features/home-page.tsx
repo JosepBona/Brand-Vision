@@ -7,6 +7,7 @@ import {
   SiPython,
   SiReact,
   SiTailwindcss,
+  SiShadcnui,
   SiTypescript,
   SiVite,
 } from "react-icons/si"
@@ -30,9 +31,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+import ShinyText from "@/components/ShinyText"
 import Particles from "@/components/Particles"
 import LogoLoop, { type LogoItem } from "@/components/ui/logo-loop"
 import image_3 from "@/assets/image_3.jpg"
+import TextType from "@/components/TextType"
 
 const techLogos: LogoItem[] = [
   { node: <SiReact />, title: "React", href: "https://react.dev" },
@@ -47,6 +50,11 @@ const techLogos: LogoItem[] = [
     href: "https://tailwindcss.com",
   },
   { node: <SiVite />, title: "Vite", href: "https://vite.dev" },
+  {
+    node: <SiShadcnui />,
+    title: "shadcn/ui",
+    href: "https://ui.shadcn.com",
+  },
   { node: <SiPython />, title: "Python", href: "https://www.python.org" },
   {
     node: <SiFastapi />,
@@ -71,7 +79,7 @@ const projects: Project[] = [
     name: "Brand Vision",
     tags: ["Python", "Computer Vision", "React"],
     description:
-      "Real-time vehicle brand detection over live streams, powered by computer vision.",
+      "Find the vehicle brand you're looking for — powered by computer vision technology.",
     features: [
       "Real-time detection over live streams",
       "YOLO-based vehicle recognition",
@@ -110,10 +118,10 @@ export function HomePage() {
       <div className="pointer-events-none absolute inset-0 z-0">
         <Particles
           particleColors={["#ffffff"]}
-          particleCount={250}
-          particleSpread={10}
+          particleCount={300}
+          particleSpread={12}
           speed={0.1}
-          particleBaseSize={45}
+          particleBaseSize={42}
           alphaParticles={true}
           disableRotation={true}
           pixelRatio={2}
@@ -128,18 +136,42 @@ export function HomePage() {
         <div className="flex flex-col items-start gap-3 text-left">
           <Badge variant="secondary" className="gap-2 px-3 py-1 text-sm">
             <span className="size-2 rounded-full bg-emerald-400" />
-            Available for work
+            Open to Work
           </Badge>
+
+          <div className="flex"></div>
           <h1
-            className="bg-clip-text font-heading text-5xl font-bold text-transparent sm:text-6xl lg:text-7xl"
+            className="bg-clip-text font-heading text-5xl font-bold text-transparent sm:text-6xl lg:text-4xl"
             style={{ backgroundImage: "var(--gradient-teal-blue)" }}
           >
-            Josep Bona
+            <TextType
+              text={["Hello, I'm Josep Bona"]}
+              typingSpeed={75}
+              pauseDuration={10500}
+
+              cursorCharacter=""
+              deletingSpeed={50}
+              cursorBlinkDuration={0.5}
+              cursorClassName="bg-clip-text text-transparent"
+            />
           </h1>
           <p className="max-w-xl text-xl text-muted-foreground sm:text-2xl">
-            Software developer building interactive web applications with{" "}
-            <span className="font-semibold text-foreground">React</span> and
-            modern web technologies.
+            Software developer building interactive web applications with
+            <span className="font-semibold text-foreground">
+              <ShinyText
+                text="✨React "
+                speed={2}
+                delay={0}
+                color="#b5b5b5"
+                shineColor="#ffffff"
+                spread={120}
+                direction="left"
+                yoyo={false}
+                pauseOnHover={false}
+                disabled={false}
+              />
+            </span>{" "}
+            and modern technologies.
           </p>
           <p className="max-w-xl text-base text-muted-foreground sm:text-lg">
             Here's a look at what I've been working on.
@@ -264,7 +296,7 @@ export function HomePage() {
                         <div className="flex flex-col gap-2 p-5 pb-6">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             {p.tags.map((tag) => (
-                              <Badge key={tag} variant="secondary">
+                              <Badge key={tag} variant="outline">
                                 {tag}
                               </Badge>
                             ))}
@@ -273,8 +305,8 @@ export function HomePage() {
                             {p.name}
                           </h3>
                           <p
-                            className="mb-2 text-sm font-medium"
-                            style={{ color: "oklch(0.78 0.15 255)" }}
+                            className="mb-2 text-sm font-medium text-purple-200"
+                            
                           >
                             {p.description}
                           </p>
@@ -284,7 +316,7 @@ export function HomePage() {
                                 key={feature}
                                 className="flex items-center gap-2 text-xs text-muted-foreground"
                               >
-                                <CheckIcon className="size-3.5 shrink-0 text-primary" />
+                                <CheckIcon className="size-3.5 shrink-0 text-purple-300" />
                                 {feature}
                               </li>
                             ))}
@@ -294,7 +326,8 @@ export function HomePage() {
                               nativeButton={false}
                               className="flex-1 rounded-md border-none text-white"
                               style={{
-                                backgroundImage: "var(--gradient-teal-blue)",
+                                backgroundImage:
+                                  "linear-gradient(oklch(0.35 0.3 322))",
                               }}
                               render={
                                 <a
@@ -339,7 +372,7 @@ export function HomePage() {
                 aria-label={`Go to slide ${i + 1}`}
                 onClick={() => api?.scrollTo(i)}
                 className={`h-1.5 rounded-full transition-all ${
-                  i === index ? "w-6 bg-primary" : "w-1.5 bg-foreground/30"
+                  i === index ? "w-6 bg-gray-500" : "w-1.5 bg-foreground/30"
                 }`}
               />
             ))}
