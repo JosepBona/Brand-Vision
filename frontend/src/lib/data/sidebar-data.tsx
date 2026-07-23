@@ -1,11 +1,19 @@
-import { CarIcon, DownloadIcon } from "lucide-react"
+import { CarIcon, DownloadIcon, HomeIcon } from "lucide-react"
 import { GitHubLogoIcon, LinkedInLogoIcon } from "@radix-ui/react-icons"
 
 export const data = {
   projects: [
     {
-      name: "Brand Vision",
+      name: "Home",
       url: "/",
+      icon: (
+        <HomeIcon
+        />
+      ),
+    },
+    {
+      name: "Brand Vision",
+      url: "/brand-vision",
       icon: (
         <CarIcon
         />

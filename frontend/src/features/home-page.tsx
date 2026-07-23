@@ -118,8 +118,8 @@ export function HomePage() {
       <div className="pointer-events-none absolute inset-0 z-0">
         <Particles
           particleColors={["#ffffff"]}
-          particleCount={300}
-          particleSpread={12}
+          particleCount={1200}
+          particleSpread={15}
           speed={0.1}
           particleBaseSize={42}
           alphaParticles={true}
@@ -131,17 +131,20 @@ export function HomePage() {
       {/* Hero */}
       <section
         id="about"
-        className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-10 py-16 sm:py-24 lg:grid-cols-2 xl:max-w-7xl xl:px-16"
+        className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-10 py-16 sm:py-24 lg:grid-cols-2 xl:max-w-7xl xl:px-16 3xl:max-w-[110rem] 3xl:gap-14 3xl:px-24 3xl:py-32 4xl:max-w-[150rem] 4xl:gap-14 4xl:px-32 4xl:py-40"
       >
-        <div className="flex flex-col items-start gap-3 text-left">
-          <Badge variant="secondary" className="gap-2 px-3 py-1 text-sm">
+        <div className="flex flex-col items-start gap-3 text-left 3xl:pl-12 4xl:gap-5 4xl:pl-20">
+          <Badge
+            variant="secondary"
+            className="gap-2 px-3 py-1 text-sm 3xl:gap-3 3xl:px-5 3xl:py-2 3xl:text-lg 4xl:gap-4 4xl:px-6 4xl:py-2.5 4xl:text-xl"
+          >
             <span className="size-2 rounded-full bg-emerald-400" />
             Open to Work
           </Badge>
 
           <div className="flex"></div>
           <h1
-            className="bg-clip-text font-heading text-5xl font-bold text-transparent sm:text-6xl lg:text-4xl"
+            className="bg-clip-text font-heading text-4xl font-bold text-transparent sm:text-6xl lg:text-4xl 3xl:text-6xl 4xl:text-7xl"
             style={{ backgroundImage: "var(--gradient-teal-blue)" }}
           >
             <TextType
@@ -155,7 +158,7 @@ export function HomePage() {
               cursorClassName="bg-clip-text text-transparent"
             />
           </h1>
-          <p className="max-w-xl text-xl text-muted-foreground sm:text-2xl">
+          <p className="max-w-xl text-xl text-muted-foreground sm:text-2xl 3xl:max-w-3xl 3xl:text-4xl 4xl:max-w-4xl 4xl:text-5xl 4xl:leading-[1.15]">
             Software developer building interactive web applications with
             <span className="font-semibold text-foreground">
               <ShinyText
@@ -173,15 +176,15 @@ export function HomePage() {
             </span>{" "}
             and modern technologies.
           </p>
-          <p className="max-w-xl text-base text-muted-foreground sm:text-lg">
+          <p className="max-w-xl text-base text-muted-foreground sm:text-lg 3xl:max-w-3xl 3xl:text-2xl 4xl:max-w-4xl 4xl:text-3xl">
             Here's a look at what I've been working on.
           </p>
 
-          <div className="mt-2 flex flex-wrap items-center gap-3">
+          <div className="mt-2 flex flex-wrap items-center gap-3 3xl:gap-4">
             <Button
               size="lg"
               nativeButton={false}
-              className="border-none text-white"
+              className="border-none text-white 3xl:h-14 3xl:px-8 3xl:text-xl 4xl:h-16 4xl:px-10 4xl:text-2xl"
               style={{ backgroundImage: "var(--gradient-teal-blue)" }}
               render={
                 <a
@@ -199,6 +202,7 @@ export function HomePage() {
               size="lg"
               variant="outline"
               nativeButton={false}
+              className="3xl:h-14 3xl:px-8 3xl:text-xl 4xl:h-16 4xl:px-10 4xl:text-2xl"
               render={
                 <a
                   href="https://github.com/JosepBona"
@@ -214,7 +218,12 @@ export function HomePage() {
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <Button size="lg" variant="outline" aria-label="Download CV">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    aria-label="Download CV"
+                    className="3xl:h-14 3xl:px-8 3xl:text-xl 4xl:h-16 4xl:px-10 4xl:text-2xl"
+                  >
                     <DownloadIcon className="size-5" />
                     Download CV
                   </Button>
@@ -240,7 +249,7 @@ export function HomePage() {
           </div>
 
           <div
-            className="mt-7 w-full"
+            className="mt-7 w-full 3xl:mt-10"
             style={{ height: "80px", position: "relative", overflow: "hidden" }}
           >
             <LogoLoop
@@ -260,13 +269,13 @@ export function HomePage() {
         </div>
 
         {/* Featured Projects carousel */}
-        <div id="projects" className="w-full">
+        <div id="projects" className="mx-auto w-full max-w-[27rem] 4xl:max-w-[44rem]">
           <Carousel setApi={setApi} className="w-full">
             <CarouselContent>
               {projects.map((p, i) => (
                 <CarouselItem key={p.name + i}>
                   {p.comingSoon ? (
-                    <Card className="mx-auto h-[32rem] w-full max-w-[27rem] justify-center gap-3 border-dashed p-6 opacity-60">
+                    <Card className="mx-auto h-[32rem] w-full max-w-[27rem] justify-center gap-3 border-dashed p-6 opacity-60 4xl:h-[50rem] 4xl:max-w-[44rem] 4xl:p-11">
                       <Badge variant="secondary" className="w-fit">
                         Coming soon
                       </Badge>
@@ -280,7 +289,7 @@ export function HomePage() {
                     </Card>
                   ) : (
                     <BorderGlow
-                      className="mx-auto h-[32rem] max-w-[27rem]"
+                      className="mx-auto h-[32rem] max-w-[27rem] 4xl:h-[50rem] 4xl:max-w-[44rem]"
                       borderRadius={12}
                       glowRadius={24}
                       backgroundColor="transparent"
@@ -293,38 +302,42 @@ export function HomePage() {
                           alt={`${p.name} cover`}
                           className="h-auto w-full object-cover"
                         />
-                        <div className="flex flex-col gap-2 p-5 pb-6">
+                        <div className="flex flex-col gap-2 p-5 pb-6 3xl:gap-3 3xl:p-7 3xl:pb-8 4xl:gap-4 4xl:p-9 4xl:pb-10">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             {p.tags.map((tag) => (
-                              <Badge key={tag} variant="secondary">
+                              <Badge
+                                key={tag}
+                                variant="outline"
+                                className="3xl:px-4 3xl:py-1.5 3xl:text-base 4xl:px-5 4xl:py-2 4xl:text-lg"
+                              >
                                 {tag}
                               </Badge>
                             ))}
                           </div>
-                          <h3 className="font-heading text-lg font-bold">
+                          <h3 className="font-heading text-lg font-bold 3xl:text-3xl 4xl:text-4xl">
                             {p.name}
                           </h3>
                           <p
-                            className="mb-2 text-sm font-medium"
+                            className="mb-2 text-sm font-medium 3xl:text-lg 4xl:text-xl"
                             style={{ color: "oklch(0.78 0.15 255)" }}
                           >
                             {p.description}
                           </p>
-                          <ul className="mb-2 flex flex-col gap-1.5">
+                          <ul className="mb-2 flex flex-col gap-1.5 3xl:gap-2">
                             {p.features.map((feature) => (
                               <li
                                 key={feature}
-                                className="flex items-center gap-2 text-xs text-muted-foreground"
+                                className="flex items-center gap-2 text-xs text-muted-foreground 3xl:text-base 4xl:text-lg"
                               >
                                 <CheckIcon className="size-3.5 shrink-0 text-primary" />
                                 {feature}
                               </li>
                             ))}
                           </ul>
-                          <div className="mt-2 flex items-center gap-2">
+                          <div className="mt-2 flex items-center gap-2 3xl:mt-3 3xl:gap-3">
                             <Button
                               nativeButton={false}
-                              className="flex-1 rounded-md border-none text-white"
+                              className="flex-1 rounded-md border-none text-white 3xl:h-12 3xl:text-lg 4xl:h-14 4xl:text-xl"
                               style={{
                                 backgroundImage: "var(--gradient-teal-blue)",
                               }}
@@ -360,8 +373,8 @@ export function HomePage() {
                 </CarouselItem>
               ))}
             </CarouselContent>
-            <CarouselPrevious className="left-3 sm:left-3" />
-            <CarouselNext className="right-3 sm:right-3" />
+            <CarouselPrevious className="-left-10 sm:-left-10 3xl:-left-14 3xl:size-5 4xl:-left-16 4xl:size-9" />
+            <CarouselNext className="-right-10 sm:-right-10 3xl:-right-14 3xl:size-5 4xl:-right-16 4xl:size-9" />
           </Carousel>
 
           <div className="mt-4 flex items-center justify-center gap-2">
