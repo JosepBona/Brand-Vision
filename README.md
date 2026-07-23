@@ -4,7 +4,7 @@ Single-repo hub for [Josep Bona](https://github.com/JosepBona)'s personal projec
 
 ## Structure
 
-- **`frontend/`** — React + Vite + TypeScript app (shadcn/ui, Tailwind). Each project lives in its own folder under `frontend/src/projects/<slug>/`, wired up through a single registry at `frontend/src/lib/projects.tsx` — routes, sidebar nav, and the home page carousel are all derived from that one file. Project pages are lazy-loaded, so visiting the home page never downloads another project's code or dependencies.
+- **`frontend/`** — React + Vite + TypeScript app (shadcn/ui, Tailwind). Each project lives in its own folder under `frontend/src/projects/<slug>/`, and is wired up directly where it's needed: its route + lazy import in `frontend/src/routes.tsx`, its nav entry in `frontend/src/lib/data/sidebar-data.tsx`, and its card in `frontend/src/features/home-page.tsx`. Project pages are lazy-loaded, so visiting the home page never downloads another project's code or dependencies. A project only gets the shared sidebar shell if its own page imports `AppShell` from `frontend/src/App.tsx` — it's opt-in, not automatic.
 - **`backend/`** — FastAPI service backing the **Brand Vision** project (see its own README below).
 
 ## Projects

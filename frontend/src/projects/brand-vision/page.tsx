@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { WifiOff } from "lucide-react"
 
+import { AppShell } from "@/App"
 import { useVehicleDetection } from "@/projects/brand-vision/hooks/useVehicleDetection"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { brandColor } from "@/projects/brand-vision/components/brand-color"
@@ -124,76 +125,78 @@ export function VehicleBrandDetector() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-[1.5rem] pb-12 xl:max-w-7xl 2xl:max-w-[100rem] 3xl:max-w-[130rem] 4xl:max-w-[160rem] 4xl:px-[3.5rem]">
-      {backendStatus === "offline" && (
-        <Alert className="border-sky-500/40 bg-sky-500/15 text-sky-100">
-          <WifiOff className="h-4 w-4" />
-          <AlertTitle>Backend connection is down</AlertTitle>
-          <AlertDescription className="text-sky-100/80">
-            You can still browse and interact with the interface, but vehicle
-            detection isn't available right now.
-          </AlertDescription>
-        </Alert>
-      )}
+    <AppShell>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-[1.5rem] pb-12 xl:max-w-7xl 2xl:max-w-[100rem] 3xl:max-w-[130rem] 4xl:max-w-[160rem] 4xl:px-[3.5rem]">
+        {backendStatus === "offline" && (
+          <Alert className="border-sky-500/40 bg-sky-500/15 text-sky-100">
+            <WifiOff className="h-4 w-4" />
+            <AlertTitle>Backend connection is down</AlertTitle>
+            <AlertDescription className="text-sky-100/80">
+              You can still browse and interact with the interface, but vehicle
+              detection isn't available right now.
+            </AlertDescription>
+          </Alert>
+        )}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_15.625rem] 3xl:grid-cols-[1fr_17.33rem] 4xl:grid-cols-[1fr_21.33rem]">
-        {/* Left column: hero + streams + brands + action */}
-        <div className="flex min-w-0 flex-col gap-5">
-          <HeroBrandVision brandStats={brandStats} />
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_15.625rem] 3xl:grid-cols-[1fr_17.33rem] 4xl:grid-cols-[1fr_21.33rem]">
+          {/* Left column: hero + streams + brands + action */}
+          <div className="flex min-w-0 flex-col gap-5">
+            <HeroBrandVision brandStats={brandStats} />
 
-          <StreamCarousel
-            streams={options.streams}
-            streamUrls={options.stream_urls}
-            isRunning={showPlayer}
-            selectedStream={selectedStream}
-            onSelectStream={(id) =>
-              setSelectedStream((prev) => (prev === id ? "" : id))
-            }
-            secondsToNextCapture={secondsToNextCapture}
-            onFirstFrame={handleStreamFirstFrame}
-            captureIntervalSeconds={options.capture_interval}
-            onFrameCapture={sendFrame}
-          />
+            <StreamCarousel
+              streams={options.streams}
+              streamUrls={options.stream_urls}
+              isRunning={showPlayer}
+              selectedStream={selectedStream}
+              onSelectStream={(id) =>
+                setSelectedStream((prev) => (prev === id ? "" : id))
+              }
+              secondsToNextCapture={secondsToNextCapture}
+              onFirstFrame={handleStreamFirstFrame}
+              captureIntervalSeconds={options.capture_interval}
+              onFrameCapture={sendFrame}
+            />
 
-          <BrandFilter
-            brands={options.brands}
-            selected={selectedBrands}
-            onChange={setSelectedBrands}
-            disabled={isRunning}
-          />
+            <BrandFilter
+              brands={options.brands}
+              selected={selectedBrands}
+              onChange={setSelectedBrands}
+              disabled={isRunning}
+            />
 
-          <DetectionActionBar
-            status={status}
-            isRunning={isRunning}
-            canStart={!!selectedStream && selectedBrands.length > 0}
-            onToggle={handleToggle}
-            streamCount={selectedStream ? 1 : 0}
-            brandCount={selectedBrands.length}
-          />
+            <DetectionActionBar
+              status={status}
+              isRunning={isRunning}
+              canStart={!!selectedStream && selectedBrands.length > 0}
+              onToggle={handleToggle}
+              streamCount={selectedStream ? 1 : 0}
+              brandCount={selectedBrands.length}
+            />
 
-          {status === "error" && errorMessage && (
-            <p className="text-sm text-destructive">{errorMessage}</p>
-          )}
-        </div>
-
-        {/* Right column: spans the full height of the dashboard. Contains two mini-charts (recharts)*/}
-        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 3xl:gap-5 3xl:p-5">
-          {/* Charts are hidden below lg: not enough width on mobile/tablet
-              to render them meaningfully, and the right column collapses
-              below the main content there anyway. */}
-          <div className="hidden lg:contents">
-            <HighConfidenceChart matches={matches} topBrands={brandStats.top} />
-            <TopBrandsRadarChart topBrands={brandStats.top} />
+            {status === "error" && errorMessage && (
+              <p className="text-sm text-destructive">{errorMessage}</p>
+            )}
           </div>
 
-          {/* Latest backend capture, below the sidebar, taking up the
-              rest of the available height. */}
-          <LastCapturePanel events={events} />
-        </div>
-      </div>
+          {/* Right column: spans the full height of the dashboard. Contains two mini-charts (recharts)*/}
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 3xl:gap-5 3xl:p-5">
+            {/* Charts are hidden below lg: not enough width on mobile/tablet
+                to render them meaningfully, and the right column collapses
+                below the main content there anyway. */}
+            <div className="hidden lg:contents">
+              <HighConfidenceChart matches={matches} topBrands={brandStats.top} />
+              <TopBrandsRadarChart topBrands={brandStats.top} />
+            </div>
 
-      <DetectionHistoryTable matches={matches} />
-    </div>
+            {/* Latest backend capture, below the sidebar, taking up the
+                rest of the available height. */}
+            <LastCapturePanel events={events} />
+          </div>
+        </div>
+
+        <DetectionHistoryTable matches={matches} />
+      </div>
+    </AppShell>
   )
 }
 

@@ -84,7 +84,7 @@ The production engine uses **static batch=1** — it won't accept batching witho
 | `hooks/useVehicleDetection.tsx` | Active job state: WebSocket connection, frame uploads, error handling (offline, 429, etc.) |
 | `components/` | `stream-player`, `stream-carousel`, `last-capture-panel`, `detection-history-table`, `hero_brand_vision` |
 | `types.ts` | Shared domain types |
-| `page.tsx` | Top-level page component, registered in `frontend/src/lib/projects.tsx` |
+| `page.tsx` | Top-level page component, lazy-loaded from `frontend/src/routes.tsx` |
 
 ### Relevant error handling (`useVehicleDetection.tsx`)
 

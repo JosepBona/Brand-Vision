@@ -35,7 +35,7 @@ import ShinyText from "@/components/ShinyText"
 import Particles from "@/components/Particles"
 import LogoLoop, { type LogoItem } from "@/components/ui/logo-loop"
 import TextType from "@/components/TextType"
-import { projects } from "@/lib/projects"
+import image_3 from "@/assets/image_3.jpg"
 
 const techLogos: LogoItem[] = [
   { node: <SiReact />, title: "React", href: "https://react.dev" },
@@ -64,15 +64,42 @@ const techLogos: LogoItem[] = [
   { node: <SiOpencv />, title: "OpenCV", href: "https://opencv.org" },
 ]
 
-const comingSoonSlide = {
-  slug: "coming-soon",
-  name: "New project",
-  comingSoon: true as const,
+interface Project {
+  name: string
+  tags: string[]
+  description: string
+  features: string[]
+  image?: string
+  url?: string
+  repoUrl?: string
+  comingSoon?: boolean
 }
 
-type CarouselSlide = (typeof projects)[number] | typeof comingSoonSlide
-
-const slides: CarouselSlide[] = [...projects, comingSoonSlide]
+const projects: Project[] = [
+  {
+    name: "Brand Vision",
+    tags: ["Python", "Computer Vision", "React"],
+    description:
+      "Find the vehicle brand you're looking for — powered by computer vision technology.",
+    features: [
+      "Real-time detection over live streams",
+      "YOLO-based vehicle recognition",
+      "Brand filtering & live stats",
+      "FastAPI backend",
+    ],
+    image: image_3,
+    url: "/brand-vision",
+    repoUrl:
+      "https://github.com/JosepBona/Portfolio/tree/main/frontend/src/projects/brand-vision",
+  },
+  {
+    name: "New project",
+    tags: [],
+    description: "",
+    features: [],
+    comingSoon: true,
+  },
+]
 
 export function HomePage() {
   const [api, setApi] = useState<CarouselApi>()
@@ -181,7 +208,7 @@ export function HomePage() {
               className="3xl:h-14 3xl:px-8 3xl:text-xl 4xl:h-16 4xl:px-10 4xl:text-2xl"
               render={
                 <a
-                  href="https://github.com/JosepBona"
+                  href="https://github.com/JosepBona/Portfolio"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="GitHub"
@@ -248,9 +275,9 @@ export function HomePage() {
         <div id="projects" className="mx-auto w-full max-w-[27rem] 4xl:max-w-[44rem]">
           <Carousel setApi={setApi} className="w-full">
             <CarouselContent>
-              {slides.map((p, i) => (
-                <CarouselItem key={p.slug + i}>
-                  {"comingSoon" in p ? (
+              {projects.map((p, i) => (
+                <CarouselItem key={p.name + i}>
+                  {p.comingSoon ? (
                     <Card className="mx-auto h-[32rem] w-full max-w-[27rem] justify-center gap-3 border-dashed p-6 opacity-60 4xl:h-[50rem] 4xl:max-w-[44rem] 4xl:p-11">
                       <Badge variant="secondary" className="w-fit">
                         Coming soon
@@ -274,13 +301,13 @@ export function HomePage() {
                     >
                       <Card className="h-full w-full gap-0 overflow-hidden pt-0">
                         <img
-                          src={p.card.image}
+                          src={p.image}
                           alt={`${p.name} cover`}
                           className="h-auto w-full object-cover"
                         />
                         <div className="flex flex-col gap-2 p-5 pb-6 3xl:gap-3 3xl:p-7 3xl:pb-8 4xl:gap-4 4xl:p-9 4xl:pb-10">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
-                            {p.card.tags.map((tag) => (
+                            {p.tags.map((tag) => (
                               <Badge
                                 key={tag}
                                 variant="outline"
@@ -297,10 +324,10 @@ export function HomePage() {
                             className="mb-2 text-sm font-medium 3xl:text-lg 4xl:text-xl"
                             style={{ color: "oklch(0.78 0.15 255)" }}
                           >
-                            {p.card.description}
+                            {p.description}
                           </p>
                           <ul className="mb-2 flex flex-col gap-1.5 3xl:gap-2">
-                            {p.card.features.map((feature) => (
+                            {p.features.map((feature) => (
                               <li
                                 key={feature}
                                 className="flex items-center gap-2 text-xs text-muted-foreground 3xl:text-base 4xl:text-lg"
@@ -319,7 +346,7 @@ export function HomePage() {
                               }}
                               render={
                                 <a
-                                  href={p.path}
+                                  href={p.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                 />
@@ -356,9 +383,9 @@ export function HomePage() {
           </Carousel>
 
           <div className="mt-4 flex items-center justify-center gap-2">
-            {slides.map((p, i) => (
+            {projects.map((p, i) => (
               <button
-                key={p.slug + i}
+                key={p.name + i}
                 aria-label={`Go to slide ${i + 1}`}
                 onClick={() => api?.scrollTo(i)}
                 className={`h-1.5 rounded-full transition-all ${

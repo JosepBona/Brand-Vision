@@ -1,9 +1,9 @@
-import { Suspense } from "react"
+import { lazy, Suspense } from "react"
 import { Loader2 } from "lucide-react"
 import { createBrowserRouter } from "react-router-dom"
-import App from "./App"
 import HomePage from "./features/home-page"
-import { projects } from "@/lib/projects"
+
+const BrandVisionPage = lazy(() => import("@/projects/brand-vision/page"))
 
 function ProjectFallback() {
   return (
@@ -18,18 +18,12 @@ export const router = createBrowserRouter([
     path: "/",
     element: <HomePage />,
   },
-  ...projects.map((project) => ({
-    path: project.path,
-    element: <App />,
-    children: [
-      {
-        index: true,
-        element: (
-          <Suspense fallback={<ProjectFallback />}>
-            <project.Component />
-          </Suspense>
-        ),
-      },
-    ],
-  })),
+  {
+    path: "/brand-vision",
+    element: (
+      <Suspense fallback={<ProjectFallback />}>
+        <BrandVisionPage />
+      </Suspense>
+    ),
+  },
 ])
