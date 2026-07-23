@@ -1,4 +1,4 @@
-import type { DetectionEvent, DetectionStatus } from "@/hooks/useVehicleDetection"
+import type { DetectionEvent, DetectionStatus } from "@/projects/brand-vision/hooks/useVehicleDetection"
 
 export interface StreamPlayerProps {
   url: string

@@ -2,11 +2,11 @@ import { useMemo, useState } from "react"
 import { Loader2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import type { DetectionEvent } from "@/hooks/useVehicleDetection"
+import type { DetectionEvent } from "@/projects/brand-vision/hooks/useVehicleDetection"
 import type {
   CaptureImageProps,
   LastCapturePanelProps,
-} from "@/types/brand-vision-page"
+} from "@/projects/brand-vision/types"
 
 // key={frame} at the call site forces a full remount on every new capture,
 // so loaded always starts cleanly at false (instead of depending on

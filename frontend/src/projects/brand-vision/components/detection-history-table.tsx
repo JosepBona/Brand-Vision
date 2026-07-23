@@ -13,7 +13,7 @@ import {
 import type {
   DetectionHistoryTableProps,
   ImageWithDownloadProps,
-} from "@/types/brand-vision-page"
+} from "@/projects/brand-vision/types"
 
 const HISTORY_PAGE_SIZE = 5
 

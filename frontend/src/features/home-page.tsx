@@ -34,8 +34,8 @@ import {
 import ShinyText from "@/components/ShinyText"
 import Particles from "@/components/Particles"
 import LogoLoop, { type LogoItem } from "@/components/ui/logo-loop"
-import image_3 from "@/assets/image_3.jpg"
 import TextType from "@/components/TextType"
+import { projects } from "@/lib/projects"
 
 const techLogos: LogoItem[] = [
   { node: <SiReact />, title: "React", href: "https://react.dev" },
@@ -64,39 +64,15 @@ const techLogos: LogoItem[] = [
   { node: <SiOpencv />, title: "OpenCV", href: "https://opencv.org" },
 ]
 
-interface Project {
-  name: string
-  tags: string[]
-  description: string
-  features: string[]
-  image?: string
-  url?: string
-  comingSoon?: boolean
+const comingSoonSlide = {
+  slug: "coming-soon",
+  name: "New project",
+  comingSoon: true as const,
 }
 
-const projects: Project[] = [
-  {
-    name: "Brand Vision",
-    tags: ["Python", "Computer Vision", "React"],
-    description:
-      "Find the vehicle brand you're looking for — powered by computer vision technology.",
-    features: [
-      "Real-time detection over live streams",
-      "YOLO-based vehicle recognition",
-      "Brand filtering & live stats",
-      "FastAPI backend",
-    ],
-    image: image_3,
-    url: "/brand-vision",
-  },
-  {
-    name: "New project",
-    tags: [],
-    description: "",
-    features: [],
-    comingSoon: true,
-  },
-]
+type CarouselSlide = (typeof projects)[number] | typeof comingSoonSlide
+
+const slides: CarouselSlide[] = [...projects, comingSoonSlide]
 
 export function HomePage() {
   const [api, setApi] = useState<CarouselApi>()
@@ -272,9 +248,9 @@ export function HomePage() {
         <div id="projects" className="mx-auto w-full max-w-[27rem] 4xl:max-w-[44rem]">
           <Carousel setApi={setApi} className="w-full">
             <CarouselContent>
-              {projects.map((p, i) => (
-                <CarouselItem key={p.name + i}>
-                  {p.comingSoon ? (
+              {slides.map((p, i) => (
+                <CarouselItem key={p.slug + i}>
+                  {"comingSoon" in p ? (
                     <Card className="mx-auto h-[32rem] w-full max-w-[27rem] justify-center gap-3 border-dashed p-6 opacity-60 4xl:h-[50rem] 4xl:max-w-[44rem] 4xl:p-11">
                       <Badge variant="secondary" className="w-fit">
                         Coming soon
@@ -298,13 +274,13 @@ export function HomePage() {
                     >
                       <Card className="h-full w-full gap-0 overflow-hidden pt-0">
                         <img
-                          src={p.image}
+                          src={p.card.image}
                           alt={`${p.name} cover`}
                           className="h-auto w-full object-cover"
                         />
                         <div className="flex flex-col gap-2 p-5 pb-6 3xl:gap-3 3xl:p-7 3xl:pb-8 4xl:gap-4 4xl:p-9 4xl:pb-10">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
-                            {p.tags.map((tag) => (
+                            {p.card.tags.map((tag) => (
                               <Badge
                                 key={tag}
                                 variant="outline"
@@ -321,10 +297,10 @@ export function HomePage() {
                             className="mb-2 text-sm font-medium 3xl:text-lg 4xl:text-xl"
                             style={{ color: "oklch(0.78 0.15 255)" }}
                           >
-                            {p.description}
+                            {p.card.description}
                           </p>
                           <ul className="mb-2 flex flex-col gap-1.5 3xl:gap-2">
-                            {p.features.map((feature) => (
+                            {p.card.features.map((feature) => (
                               <li
                                 key={feature}
                                 className="flex items-center gap-2 text-xs text-muted-foreground 3xl:text-base 4xl:text-lg"
@@ -343,7 +319,7 @@ export function HomePage() {
                               }}
                               render={
                                 <a
-                                  href={p.url}
+                                  href={p.path}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                 />
@@ -351,20 +327,22 @@ export function HomePage() {
                             >
                               View project
                             </Button>
-                            <Button
-                              variant="outline"
-                              nativeButton={false}
-                              render={
-                                <a
-                                  href="https://github.com/JosepBona/Brand-Vision"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  aria-label="GitHub"
-                                />
-                              }
-                            >
-                              <GitHubLogoIcon className="size-4" />
-                            </Button>
+                            {p.repoUrl && (
+                              <Button
+                                variant="outline"
+                                nativeButton={false}
+                                render={
+                                  <a
+                                    href={p.repoUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label="GitHub"
+                                  />
+                                }
+                              >
+                                <GitHubLogoIcon className="size-4" />
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </Card>
@@ -378,9 +356,9 @@ export function HomePage() {
           </Carousel>
 
           <div className="mt-4 flex items-center justify-center gap-2">
-            {projects.map((p, i) => (
+            {slides.map((p, i) => (
               <button
-                key={p.name + i}
+                key={p.slug + i}
                 aria-label={`Go to slide ${i + 1}`}
                 onClick={() => api?.scrollTo(i)}
                 className={`h-1.5 rounded-full transition-all ${

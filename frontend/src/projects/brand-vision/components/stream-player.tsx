@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import Hls from "hls.js"
 import { AlertTriangle, Loader2 } from "lucide-react"
 
-import type { StreamPlayerProps } from "@/types/brand-vision-page"
+import type { StreamPlayerProps } from "@/projects/brand-vision/types"
 
 /**
  * Plays an HLS (.m3u8) stream directly in the browser.

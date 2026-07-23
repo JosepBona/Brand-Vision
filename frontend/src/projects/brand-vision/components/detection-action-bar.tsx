@@ -2,7 +2,7 @@ import { Loader2, Play, Square } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import type { DetectionActionBarProps } from "@/types/brand-vision-page"
+import type { DetectionActionBarProps } from "@/projects/brand-vision/types"
 
 export function DetectionActionBar({
   status,

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts"
 
 import { Card } from "@/components/ui/card"
-import { brandColor } from "@/components/brand_vision_page/brand-color"
-import type { HighConfidenceChartProps } from "@/types/brand-vision-page"
+import { brandColor } from "@/projects/brand-vision/components/brand-color"
+import type { HighConfidenceChartProps } from "@/projects/brand-vision/types"
 
 // ResponsiveContainer only resizes the SVG via ResizeObserver, which
 // doesn't react to height changes made by Tailwind breakpoints (they're

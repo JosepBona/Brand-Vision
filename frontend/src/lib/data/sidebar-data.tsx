@@ -1,27 +1,17 @@
-import { CarIcon, DownloadIcon, HomeIcon } from "lucide-react"
+import { DownloadIcon } from "lucide-react"
 import { GitHubLogoIcon, LinkedInLogoIcon } from "@radix-ui/react-icons"
+import { projects } from "@/lib/projects"
 
 export const data = {
   projects: [
-    {
-      name: "Home",
-      url: "/",
-      icon: (
-        <HomeIcon
-        />
-      ),
-    },
-    {
-      name: "Brand Vision",
-      url: "/brand-vision",
-      icon: (
-        <CarIcon
-        />
-      ),
-    },
+    ...projects.map((project) => ({
+      name: project.name,
+      url: project.path,
+      icon: project.icon,
+    })),
     {
       name: "Github",
-      url: "https://github.com/JosepBona/Brand-Vision",
+      url: "https://github.com/JosepBona",
       icon: (
         <GitHubLogoIcon
         />

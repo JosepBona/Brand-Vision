@@ -1,6 +1,6 @@
 import { Card } from "@/components/ui/card"
 import image_3 from "@/assets/image_3.jpg"
-import type { HeroBrandVisionProps } from "@/types/brand-vision-page"
+import type { HeroBrandVisionProps } from "@/projects/brand-vision/types"
 
 // Hero: title + per-brand stats, with the illustration as the Card's own
 // background (background-image, cover) instead of an <img> floating on the

@@ -12,7 +12,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
-import type { TopBrandsRadarChartProps } from "@/types/brand-vision-page"
+import type { TopBrandsRadarChartProps } from "@/projects/brand-vision/types"
 
 // Sample data: only used when there's no real detection yet (neither in
 // this session nor persisted), so the chart doesn't look empty/broken

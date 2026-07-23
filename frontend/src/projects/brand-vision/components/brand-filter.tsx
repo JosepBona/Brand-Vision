@@ -2,7 +2,7 @@ import { useRef } from "react"
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
-import type { BrandFilterProps } from "@/types/brand-vision-page"
+import type { BrandFilterProps } from "@/projects/brand-vision/types"
 
 export function BrandFilter({
   brands,

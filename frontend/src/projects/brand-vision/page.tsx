@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { WifiOff } from "lucide-react"
 
-import { useVehicleDetection } from "@/hooks/useVehicleDetection"
+import { useVehicleDetection } from "@/projects/brand-vision/hooks/useVehicleDetection"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { brandColor } from "@/components/brand_vision_page/brand-color"
-import HeroBrandVision from "@/components/brand_vision_page/hero_brand_vision"
-import StreamCarousel from "@/components/brand_vision_page/stream-carousel"
-import BrandFilter from "@/components/brand_vision_page/brand-filter"
-import DetectionActionBar from "@/components/brand_vision_page/detection-action-bar"
-import HighConfidenceChart from "@/components/brand_vision_page/high-confidence-chart"
-import TopBrandsRadarChart from "@/components/brand_vision_page/top-brands-radar-chart"
-import LastCapturePanel from "@/components/brand_vision_page/last-capture-panel"
-import DetectionHistoryTable from "@/components/brand_vision_page/detection-history-table"
+import { brandColor } from "@/projects/brand-vision/components/brand-color"
+import HeroBrandVision from "@/projects/brand-vision/components/hero_brand_vision"
+import StreamCarousel from "@/projects/brand-vision/components/stream-carousel"
+import BrandFilter from "@/projects/brand-vision/components/brand-filter"
+import DetectionActionBar from "@/projects/brand-vision/components/detection-action-bar"
+import HighConfidenceChart from "@/projects/brand-vision/components/high-confidence-chart"
+import TopBrandsRadarChart from "@/projects/brand-vision/components/top-brands-radar-chart"
+import LastCapturePanel from "@/projects/brand-vision/components/last-capture-panel"
+import DetectionHistoryTable from "@/projects/brand-vision/components/detection-history-table"
 
 export function VehicleBrandDetector() {
   const {
