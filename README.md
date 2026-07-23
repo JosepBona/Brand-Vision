@@ -11,9 +11,3 @@ Single-repo hub for [Josep Bona](https://github.com/JosepBona)'s personal projec
 
 - **Brand Vision** — real-time vehicle brand detection from public traffic camera streams (YOLO + a custom brand classifier). See [frontend/src/projects/brand-vision/README.md](frontend/src/projects/brand-vision/README.md).
 
-## Adding a new project
-
-1. Create `frontend/src/projects/<slug>/`.
-2. Add an entry to `frontend/src/lib/projects.tsx`: route path, sidebar icon, home page card copy, and a `lazy(() => import("@/projects/<slug>/page"))` component.
-
-That's it — the new project automatically appears in routing, the sidebar, and the home page.
